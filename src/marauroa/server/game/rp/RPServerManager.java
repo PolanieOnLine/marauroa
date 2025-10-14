@@ -36,6 +36,7 @@ import marauroa.common.game.Result;
 import marauroa.common.net.message.MessageS2CPerception;
 import marauroa.common.net.message.MessageS2CTransferREQ;
 import marauroa.common.net.message.TransferContent;
+import marauroa.common.resource.PersistenceResourceProvider;
 import marauroa.common.resource.ResourceReloadService;
 import marauroa.server.db.TransactionPool;
 import marauroa.server.game.ActionInvalidException;
@@ -132,6 +133,8 @@ public class RPServerManager extends Thread {
 			this.netMan = netMan;
 
 			Configuration conf = Configuration.getConfiguration();
+			ResourceReloadService.getInstance().setResourceProvider(
+				new PersistenceResourceProvider(Configuration.getConfigurationParams()));
 			/*
 			 * This method loads the extensions that implement the game server
 			 * code.

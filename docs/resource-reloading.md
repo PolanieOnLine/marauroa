@@ -8,7 +8,8 @@ Nowa infrastruktura pozwala na bezpieczne przeładowywanie plików konfiguracyjn
 |-------|------|
 | `ResourceProvider` | Abstrakcja nad źródłem danych. Dostarcza `InputStream` wskazanego zasobu. |
 | `Reloadable` | Kontrakt dla komponentów, które potrafią odświeżyć swój stan na podstawie zasobu. |
-| `ClassPathResourceProvider` | Domyślny dostawca korzystający z classpath aplikacji. |
+| `ClassPathResourceProvider` | Dostawca korzystający z classpath aplikacji. |
+| `PersistenceResourceProvider` | Domyślny dostawca korzystający z konfiguracji `ConfigurationParams`. |
 | `ResourceReloadService` | Singleton zarządzający rejestracją i kolejką przeładowań. |
 
 ## Rejestracja komponentu
@@ -41,14 +42,15 @@ public final class NpcTemplateRepository implements Reloadable {
 
 ## Dostępni dostawcy zasobów
 
-* `ClassPathResourceProvider` – wykorzystuje classpath serwera (np. zasoby z pliku JAR).
-* Własne implementacje `ResourceProvider` – np. odczyt z systemu plików, bazy danych lub zdalnego API.
+* `PersistenceResourceProvider` – odczytuje pliki przez warstwę `Persistence`, dzięki czemu respektuje ustawienia `basedir` i `relativeToHome` wykorzystywane przy starcie serwera. `RPServerManager` konfiguruje go automatycznie, więc pliki w `data/` są odczytywane z aktualnej instalacji gry.
+* `ClassPathResourceProvider` – sprawdza się przy zasobach spakowanych wewnątrz archiwów JAR.
+* Własne implementacje `ResourceProvider` – np. odczyt z bazy danych lub zdalnego API.
 
-Dostawcę ustawiamy raz, na starcie aplikacji:
+Jeżeli projekt potrzebuje innego źródła danych, wystarczy przed rozpoczęciem przetwarzania tur ustawić własny dostawca:
 
 ```java
 ResourceReloadService reloads = ResourceReloadService.getInstance();
-reloads.setResourceProvider(new FileSystemResourceProvider(Paths.get("config")));
+reloads.setResourceProvider(new CustomResourceProvider(...));
 ```
 
 ## Kolejka przeładowań
