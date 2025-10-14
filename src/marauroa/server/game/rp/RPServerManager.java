@@ -36,6 +36,7 @@ import marauroa.common.game.Result;
 import marauroa.common.net.message.MessageS2CPerception;
 import marauroa.common.net.message.MessageS2CTransferREQ;
 import marauroa.common.net.message.TransferContent;
+import marauroa.common.resource.ResourceReloadService;
 import marauroa.server.db.TransactionPool;
 import marauroa.server.game.ActionInvalidException;
 import marauroa.server.game.Statistics;
@@ -667,6 +668,7 @@ public class RPServerManager extends Thread {
 
 					/* Move zone to the next turn */
 					world.nextTurn();
+					ResourceReloadService.getInstance().processPendingReloads();
 					timeEnds[7] = System.currentTimeMillis();
 
 					turn++;
