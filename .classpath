@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="src" path="tests"/>
+	<classpathentry kind="src" path="functional_tests"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/jdk-11">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="libs/h2.jar"/>
+	<classpathentry kind="lib" path="libs/jnlp.jar"/>
+	<classpathentry kind="lib" path="libs/json-simple-1.1.1.jar"/>
+	<classpathentry kind="lib" path="libs/junit-4.4.jar"/>
+	<classpathentry kind="lib" path="libs/jython.jar"/>
+	<classpathentry kind="lib" path="libs/log4j.jar"/>
+	<classpathentry kind="lib" path="libs/jaxb-api-2.3.1.jar"/>
+	<classpathentry kind="lib" path="libs/tomcat-embed-core-10.1.7.jar" sourcepath="/tomcat"/>
+	<classpathentry kind="lib" path="libs/jakarta.annotation-api-2.1.1.jar"/>
+	<classpathentry kind="lib" path="libs/tomcat-embed-websocket-10.1.7.jar" sourcepath="/tomcat"/>
+	<classpathentry kind="output" path="classes"/>
+</classpath>
