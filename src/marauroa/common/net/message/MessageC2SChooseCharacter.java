@@ -12,6 +12,8 @@
 package marauroa.common.net.message;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import marauroa.common.net.Channel;
@@ -89,10 +91,24 @@ public class MessageC2SChooseCharacter extends Message {
 	@Override
 	public void readFromMap(Map<String, Object> in) throws IOException {
 		super.readFromMap(in);
-		character = (String) in.get("character");
+		character = decodeCharacter((String) in.get("character"));
 
 		if (type != MessageType.C2S_CHOOSECHARACTER) {
 			throw new IOException();
+		}
+	}
+
+	private String decodeCharacter(String value) {
+		if (value == null) {
+			return null;
+		}
+		if (value.indexOf('%') == -1 && value.indexOf('+') == -1) {
+			return value;
+		}
+		try {
+			return URLDecoder.decode(value, StandardCharsets.UTF_8);
+		} catch (IllegalArgumentException e) {
+			return value;
 		}
 	}
 }

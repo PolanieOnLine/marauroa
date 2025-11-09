@@ -11,6 +11,7 @@
  ***************************************************************************/
 package marauroa.server.net.web;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
@@ -76,13 +77,12 @@ public class WebSocketChannel {
 		}
 		username = params.get("marauroa_authenticated_usernam").get(0);
 		if (username == null) {
-			logger.warn("No username in request by" + address);
-			close();
-			return;
+			logger.debug("No username in request by" + address);
 		}
 		webSocketServerManager.onConnect(this);
 		logger.debug("Socket Connected: " + session);
 	}
+
 
 	private boolean validateOrigin(String origin, String expectedOrigin) {
 		if (expectedOrigin == null) {
@@ -96,6 +96,7 @@ public class WebSocketChannel {
 		}
 		return false;
 	}
+
 
 	@OnMessage
 	public void onWebSocketText(String message) {
@@ -112,7 +113,7 @@ public class WebSocketChannel {
 
 	@OnError
 	public void onError(Session session, Throwable cause) {
-		if (cause instanceof SocketTimeoutException) {
+		if (cause instanceof SocketTimeoutException || cause instanceof EOFException) {
 			onClose(session, new CloseReason(CloseCodes.UNEXPECTED_CONDITION, "Timeout"));
 			return;
 		}
@@ -165,5 +166,4 @@ public class WebSocketChannel {
 			logger.error(e, e);
 		}
 	}
-
 }

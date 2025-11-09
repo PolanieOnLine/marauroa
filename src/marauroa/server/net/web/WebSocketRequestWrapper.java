@@ -160,5 +160,4 @@ public class WebSocketRequestWrapper extends HttpServletRequestWrapper {
 
 		return null;
 	}
-
 }
