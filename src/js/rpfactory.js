@@ -63,14 +63,14 @@ marauroa.rpobjectFactory = new function(){
 	}
 
 	this.create = function(rpclass) {
-		var ctor = this["_default"];
-		if (typeof(this[rpclass]) != "undefined") {
-			ctor = this[rpclass];
+		var ctor = marauroa.rpobjectFactory["_default"];
+		if (typeof(marauroa.rpobjectFactory[rpclass]) != "undefined") {
+			ctor = marauroa.rpobjectFactory[rpclass];
 		}
 		var temp = marauroa.util.fromProto(ctor);
 		temp.init();
 		return temp;
-	}
+	};
 }
 
 
@@ -90,12 +90,12 @@ marauroa.rpeventFactory = new function(){
 	}
 
 	this.create = function(rpclass) {
-		var ctor = this["_default"];
-		if (typeof(this[rpclass]) != "undefined") {
-			ctor = this[rpclass];
+		var ctor = marauroa.rpslotFactory["_default"];
+		if (typeof(marauroa.rpslotFactory[name]) != "undefined") {
+			ctor = marauroa.rpslotFactory[name];
 		}
 		return marauroa.util.fromProto(ctor);
-	}
+	};
 }
 
 
@@ -151,13 +151,13 @@ marauroa.rpslotFactory = new function(){
 	}
 
 	this.create = function(name) {
-		var ctor = this["_default"];
-		if (typeof(this[name]) != "undefined") {
-			ctor = this[name];
+		var ctor = marauroa.rpslotFactory["_default"];
+		if (typeof(marauroa.rpslotFactory[name]) != "undefined") {
+			ctor = marauroa.rpslotFactory[name];
 		}
 		var slot = marauroa.util.fromProto(ctor);
 		slot._name = name;
 		slot._objects = [];
 		return slot;
-	}
+	};
 };
