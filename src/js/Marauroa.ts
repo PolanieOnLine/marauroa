@@ -9,7 +9,7 @@ class Marauroa {
 		messages: false,
 		unknownEvents: true
 	};
-	clientFramework!: ClientFramework;
+	clientFramework = new ClientFramework();
 	currentZoneName!: string;
 	currentZone: any;
 	perceptionHandler: any;
