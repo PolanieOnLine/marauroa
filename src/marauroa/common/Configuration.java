@@ -125,6 +125,18 @@ public class Configuration {
 	}
 
 	/**
+	 * Returns a copy of the current static configuration parameters.
+	 *
+	 * @return configuration parameters in use for this process
+	 */
+	public static ConfigurationParams getConfigurationParams() {
+		ConfigurationParams params = new ConfigurationParams(staticParams.isRelativeToHome(),
+				staticParams.getBasedir(), staticParams.getConfigurationFile());
+		params.setPersistence(staticParams.isPersistence());
+		return params;
+	}
+
+	/**
 	 * This method returns a String with the value of the property.
 	 *
 	 * @param property
