@@ -64,11 +64,15 @@ public class MessageS2CPerception extends Message {
 
 	private RPObject myRPObjectModifiedDeleted;
 
+	/** Identity of the Perception backing the cacheable static payload. */
+	private Object staticPartCacheIdentity;
+
 	private static CachedCompressedPerception cache = CachedCompressedPerception.get();
 
 	/** Constructor for allowing creation of an empty message */
 	public MessageS2CPerception() {
 		super(MessageType.S2C_PERCEPTION, null);
+		staticPartCacheIdentity = this;
 	}
 
 	/**
@@ -89,6 +93,7 @@ public class MessageS2CPerception extends Message {
 		modifiedAddedAttribsRPObjects = perception.modifiedAddedList;
 		modifiedDeletedAttribsRPObjects = perception.modifiedDeletedList;
 		deletedRPObjects = perception.deletedList;
+		staticPartCacheIdentity = perception;
 	}
 
 	/**
@@ -112,7 +117,7 @@ public class MessageS2CPerception extends Message {
 	}
 
 	/**
-	 * gets the deleted information for the personal object
+	 * gets the deleted information from the personal object
 	 *
 	 * @return deleted information from the personal object
 	 */
@@ -371,17 +376,21 @@ public class MessageS2CPerception extends Message {
 
 			private final int protocolVersion;
 
-			public CacheKey(byte type, IRPZone.ID zoneid, int protocolVersion) {
+			private final Object perceptionIdentity;
+
+			public CacheKey(byte type, IRPZone.ID zoneid, int protocolVersion, Object perceptionIdentity) {
 				this.type = type;
 				this.zoneid = zoneid;
 				this.protocolVersion = protocolVersion;
+				this.perceptionIdentity = perceptionIdentity;
 			}
 
 			@Override
 			public boolean equals(Object obj) {
 				if (obj instanceof CacheKey) {
 					CacheKey a = (CacheKey) obj;
-					if (a.type == type && a.zoneid.equals(zoneid) && a.protocolVersion == protocolVersion) {
+					if (a.type == type && a.zoneid.equals(zoneid) && a.protocolVersion == protocolVersion
+							&& a.perceptionIdentity == perceptionIdentity) {
 						return true;
 					}
 				}
@@ -391,7 +400,8 @@ public class MessageS2CPerception extends Message {
 
 			@Override
 			public int hashCode() {
-				return (type + 1) * zoneid.hashCode() * protocolVersion;
+				int result = (type + 1) * zoneid.hashCode() * protocolVersion;
+				return 31 * result + System.identityHashCode(perceptionIdentity);
 			}
 		}
 
@@ -416,7 +426,8 @@ public class MessageS2CPerception extends Message {
 		}
 
 		synchronized public byte[] get(MessageS2CPerception perception) throws IOException {
-			CacheKey key = new CacheKey(perception.typePerception, perception.zoneid, perception.protocolVersion);
+			CacheKey key = new CacheKey(perception.typePerception, perception.zoneid,
+					perception.protocolVersion, perception.staticPartCacheIdentity);
 
 			if (!cachedContent.containsKey(key)) {
 				logger.debug("Perception not found in cache");
