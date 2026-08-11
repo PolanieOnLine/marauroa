@@ -93,6 +93,12 @@ import marauroa.server.game.dbcommand.StoreZoneCommand;
  */
 public class MarauroaRPZone implements IRPZone {
 
+	/** Attribute containing the viewer attribute used to scope an object. */
+	public static final String PERCEPTION_KEY_ATTRIBUTE = "#perception_key";
+
+	/** Attribute containing the required viewer value used to scope an object. */
+	public static final String PERCEPTION_VALUE_ATTRIBUTE = "#perception_value";
+
 	/** the logger instance. */
 	private static final marauroa.common.Logger logger = Log4J.getLogger(MarauroaRPZone.class);
 
@@ -223,6 +229,7 @@ public class MarauroaRPZone implements IRPZone {
 			RPObject deleted = new RPObject();
 			deleted.setID(object.getID());
 			deleted.setRPClass(object.getRPClass());
+			copyPerceptionScope(object, deleted);
 
 			modified.remove(object);
 			perception.removed(deleted);
@@ -245,6 +252,7 @@ public class MarauroaRPZone implements IRPZone {
 		RPObject deleted = new RPObject();
 		deleted.setID(object.getID());
 		deleted.setRPClass(object.getRPClass());
+		copyPerceptionScope(object, deleted);
 
 		perception.removed(deleted);
 	}
@@ -289,7 +297,7 @@ public class MarauroaRPZone implements IRPZone {
 	 * This method assigns a valid id to the object.
 	 *
 	 * @param object
-	 *            the object that is going to obtain a new id
+	 *            object that is going to obtain a new id
 	 */
 	public void assignRPObjectID(RPObject object) {
 		RPObject.ID id = new RPObject.ID(++lastNonPermanentIdAssigned, zoneid);
@@ -346,7 +354,7 @@ public class MarauroaRPZone implements IRPZone {
 				}
 			}
 
-			return prebuildDeltaPerception;
+			return filterPerception(player, prebuildDeltaPerception);
 		} else /* type==Perception.SYNC */{
 			if (prebuildSyncPerception == null) {
 				prebuildSyncPerception = new Perception(Perception.SYNC, getID());
@@ -358,7 +366,79 @@ public class MarauroaRPZone implements IRPZone {
 				}
 			}
 
-			return prebuildSyncPerception;
+			return filterPerception(player, prebuildSyncPerception);
+		}
+	}
+
+	private Perception filterPerception(RPObject player, Perception source) {
+		if (!hasPlayerScopedObjects(source)) {
+			return source;
+		}
+
+		Perception filtered = new Perception(source.type, source.zoneid);
+		copyVisible(player, source.addedList, filtered.addedList);
+		copyVisible(player, source.modifiedAddedList, filtered.modifiedAddedList);
+		copyVisible(player, source.modifiedDeletedList, filtered.modifiedDeletedList);
+		copyVisible(player, source.deletedList, filtered.deletedList);
+		return filtered;
+	}
+
+	private boolean hasPlayerScopedObjects(Perception perceptionToCheck) {
+		return hasPlayerScopedObject(perceptionToCheck.addedList)
+				|| hasPlayerScopedObject(perceptionToCheck.modifiedAddedList)
+				|| hasPlayerScopedObject(perceptionToCheck.modifiedDeletedList)
+				|| hasPlayerScopedObject(perceptionToCheck.deletedList);
+	}
+
+	private boolean hasPlayerScopedObject(List<RPObject> list) {
+		for (RPObject object : list) {
+			if (getVisibilityObject(object).has(PERCEPTION_KEY_ATTRIBUTE)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void copyVisible(RPObject player, List<RPObject> source, List<RPObject> target) {
+		for (RPObject object : source) {
+			RPObject visibilityObject = getVisibilityObject(object);
+			if (isVisibleTo(player, visibilityObject)) {
+				target.add(object);
+			}
+		}
+	}
+
+	private RPObject getVisibilityObject(RPObject object) {
+		if (object.has(PERCEPTION_KEY_ATTRIBUTE) || !object.has("id")) {
+			return object;
+		}
+		try {
+			RPObject current = objects.get(object.getID());
+			return current == null ? object : current;
+		} catch (RuntimeException e) {
+			return object;
+		}
+	}
+
+	private boolean isVisibleTo(RPObject player, RPObject object) {
+		if (!object.has(PERCEPTION_KEY_ATTRIBUTE)) {
+			return true;
+		}
+		if (!object.has(PERCEPTION_VALUE_ATTRIBUTE) || player == null) {
+			return false;
+		}
+
+		String playerAttribute = object.get(PERCEPTION_KEY_ATTRIBUTE);
+		return player.has(playerAttribute)
+				&& object.get(PERCEPTION_VALUE_ATTRIBUTE).equals(player.get(playerAttribute));
+	}
+
+	private void copyPerceptionScope(RPObject source, RPObject target) {
+		if (source.has(PERCEPTION_KEY_ATTRIBUTE)) {
+			target.put(PERCEPTION_KEY_ATTRIBUTE, source.get(PERCEPTION_KEY_ATTRIBUTE));
+		}
+		if (source.has(PERCEPTION_VALUE_ATTRIBUTE)) {
+			target.put(PERCEPTION_VALUE_ATTRIBUTE, source.get(PERCEPTION_VALUE_ATTRIBUTE));
 		}
 	}
 
