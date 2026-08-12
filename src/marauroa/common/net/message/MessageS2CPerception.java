@@ -406,6 +406,8 @@ public class MessageS2CPerception extends Message {
 		}
 
 		private final Map<CacheKey, byte[]> cachedContent;
+		private long cacheHitCount;
+		private long cacheMissCount;
 
 		private CachedCompressedPerception() {
 			cachedContent = new HashMap<CacheKey, byte[]>();
@@ -423,6 +425,8 @@ public class MessageS2CPerception extends Message {
 
 		synchronized public void clear() {
 			cachedContent.clear();
+			cacheHitCount = 0;
+			cacheMissCount = 0;
 		}
 
 		synchronized public byte[] get(MessageS2CPerception perception) throws IOException {
@@ -430,6 +434,7 @@ public class MessageS2CPerception extends Message {
 					perception.protocolVersion, perception.staticPartCacheIdentity);
 
 			if (!cachedContent.containsKey(key)) {
+				cacheMissCount++;
 				logger.debug("Perception not found in cache");
 				ByteArrayOutputStream array = new ByteArrayOutputStream();
 				DeflaterOutputStream out_stream = new DeflaterOutputStream(array);
@@ -442,10 +447,19 @@ public class MessageS2CPerception extends Message {
 
 				cachedContent.put(key, content);
 			} else {
+				cacheHitCount++;
 				logger.debug("Perception FOUND in cache");
 			}
 
 			return cachedContent.get(key);
+		}
+
+		synchronized long getCacheHitCount() {
+			return cacheHitCount;
+		}
+
+		synchronized long getCacheMissCount() {
+			return cacheMissCount;
 		}
 	}
 
@@ -454,6 +468,16 @@ public class MessageS2CPerception extends Message {
 	 */
 	public static void clearPrecomputedPerception() {
 		cache.clear();
+	}
+
+	/** Returns cache hits since the last perception cache clear. */
+	public static long getPrecomputedPerceptionCacheHitCount() {
+		return cache.getCacheHitCount();
+	}
+
+	/** Returns cache misses since the last perception cache clear. */
+	public static long getPrecomputedPerceptionCacheMissCount() {
+		return cache.getCacheMissCount();
 	}
 
 	private byte[] getPrecomputedStaticPartPerception() throws IOException {
