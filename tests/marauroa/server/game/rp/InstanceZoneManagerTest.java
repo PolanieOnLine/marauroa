@@ -40,7 +40,9 @@ public class InstanceZoneManagerTest {
 		assertEquals(first, same);
 		assertEquals(first.getRuntimeZoneId(), same.getRuntimeZoneId());
 		assertFalse(first.getRuntimeZoneId().equals(group.getRuntimeZoneId()));
-		assertTrue(first.getRuntimeZoneIdString().startsWith("__instance__."));
+		assertTrue(first.getRuntimeZoneIdString().startsWith("instance_"));
+		assertTrue(first.getRuntimeZoneIdString().length() <= 32);
+		assertFalse(first.getRuntimeZoneIdString().contains("."));
 		assertFalse(first.getRuntimeZoneIdString().contains("Alice Example"));
 		assertFalse(first.getRuntimeZoneIdString().contains("int/maze"));
 	}
