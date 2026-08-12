@@ -49,6 +49,7 @@ public final class ResourceReloadService {
 	private final Set<String> queued = Collections.newSetFromMap(
 			new ConcurrentHashMap<String, Boolean>());
 	private final Queue<String> queue = new ConcurrentLinkedQueue<String>();
+	private final ReloadMetrics metrics = new ReloadMetrics();
 
 	private volatile ResourceProvider provider;
 
@@ -148,9 +149,11 @@ public final class ResourceReloadService {
 		if (id == null) {
 			return false;
 		}
+		metrics.recordRequest();
 
 		Registration<?> registration = registered.get(id);
 		if (registration == null) {
+			metrics.recordUnknownResourceRequest();
 			logger.warn("Ignoring reload request for unknown resource '" + id + "'");
 			return false;
 		}
@@ -160,11 +163,13 @@ public final class ResourceReloadService {
 
 			/* The resource may have been replaced or removed while it loaded. */
 			if (registered.get(id) != registration) {
+				metrics.recordStalePreparedCandidate();
 				logger.warn("Ignoring prepared reload for stale resource '" + id + "'");
 				return false;
 			}
 
-			pending.put(id, candidate);
+			PendingReload<?> previous = pending.put(id, candidate);
+			metrics.recordPreparedCandidate(previous != null);
 			if (queued.add(id)) {
 				queue.add(id);
 			}
@@ -209,6 +214,7 @@ public final class ResourceReloadService {
 			}
 
 			if (registered.get(id) != candidate.registration) {
+				metrics.recordStalePendingCandidate();
 				logger.warn("Ignoring stale pending reload for resource '" + id + "'");
 				continue;
 			}
@@ -225,6 +231,15 @@ public final class ResourceReloadService {
 	 */
 	public boolean hasPendingReloads() {
 		return !pending.isEmpty();
+	}
+
+	/**
+	 * Returns one immutable process-local snapshot of reload diagnostics.
+	 *
+	 * @return current reload metrics
+	 */
+	public ResourceReloadMetricsSnapshot getMetricsSnapshot() {
+		return metrics.snapshot(registered.size(), pending.size());
 	}
 
 	/**
@@ -245,21 +260,42 @@ public final class ResourceReloadService {
 		return id;
 	}
 
-	private static <T> PendingReload<T> prepare(Registration<T> registration,
+	private <T> PendingReload<T> prepare(Registration<T> registration,
 			ResourceProvider provider) throws Exception {
-		T candidate = registration.resource.load(provider);
-		registration.resource.validate(candidate);
+		T candidate;
+		long loadStartNanos = System.nanoTime();
+		boolean loadSucceeded = false;
+		try {
+			candidate = registration.resource.load(provider);
+			loadSucceeded = true;
+		} finally {
+			metrics.recordLoad(System.nanoTime() - loadStartNanos, loadSucceeded);
+		}
+
+		long validationStartNanos = System.nanoTime();
+		boolean validationSucceeded = false;
+		try {
+			registration.resource.validate(candidate);
+			validationSucceeded = true;
+		} finally {
+			metrics.recordValidation(System.nanoTime() - validationStartNanos, validationSucceeded);
+		}
 		return new PendingReload<T>(registration, candidate);
 	}
 
-	private static <T> void apply(PendingReload<T> pendingReload) {
+	private <T> void apply(PendingReload<T> pendingReload) {
 		String id = pendingReload.registration.resource.getId();
+		long applyStartNanos = System.nanoTime();
+		boolean applySucceeded = false;
 		try {
 			pendingReload.registration.resource.apply(pendingReload.candidate);
+			applySucceeded = true;
 			logger.info("Applied reload for resource '" + id + "'");
 		} catch (RuntimeException e) {
 			logger.error("Failed to apply validated reload for resource '" + id
 					+ "'. ReloadableResource.apply() must be an atomic, non-failing state swap", e);
+		} finally {
+			metrics.recordApply(System.nanoTime() - applyStartNanos, applySucceeded);
 		}
 	}
 
@@ -278,6 +314,101 @@ public final class ResourceReloadService {
 		private PendingReload(Registration<T> registration, T candidate) {
 			this.registration = registration;
 			this.candidate = candidate;
+		}
+	}
+
+	/** Small synchronized recorder used only when reload work actually occurs. */
+	private static final class ReloadMetrics {
+		private long requestCount;
+		private long unknownResourceRequestCount;
+		private long loadSuccessCount;
+		private long loadFailureCount;
+		private long validationSuccessCount;
+		private long validationFailureCount;
+		private long preparedCandidateCount;
+		private long coalescedCandidateCount;
+		private long stalePreparedCandidateCount;
+		private long applySuccessCount;
+		private long applyFailureCount;
+		private long stalePendingCandidateCount;
+		private long totalLoadDurationNanos;
+		private long maxLoadDurationNanos;
+		private long totalValidationDurationNanos;
+		private long maxValidationDurationNanos;
+		private long totalApplyDurationNanos;
+		private long maxApplyDurationNanos;
+
+		private synchronized void recordRequest() {
+			requestCount++;
+		}
+
+		private synchronized void recordUnknownResourceRequest() {
+			unknownResourceRequestCount++;
+		}
+
+		private synchronized void recordLoad(long durationNanos, boolean succeeded) {
+			if (succeeded) {
+				loadSuccessCount++;
+			} else {
+				loadFailureCount++;
+			}
+			totalLoadDurationNanos += durationNanos;
+			if (durationNanos > maxLoadDurationNanos) {
+				maxLoadDurationNanos = durationNanos;
+			}
+		}
+
+		private synchronized void recordValidation(long durationNanos, boolean succeeded) {
+			if (succeeded) {
+				validationSuccessCount++;
+			} else {
+				validationFailureCount++;
+			}
+			totalValidationDurationNanos += durationNanos;
+			if (durationNanos > maxValidationDurationNanos) {
+				maxValidationDurationNanos = durationNanos;
+			}
+		}
+
+		private synchronized void recordPreparedCandidate(boolean coalesced) {
+			preparedCandidateCount++;
+			if (coalesced) {
+				coalescedCandidateCount++;
+			}
+		}
+
+		private synchronized void recordStalePreparedCandidate() {
+			stalePreparedCandidateCount++;
+		}
+
+		private synchronized void recordStalePendingCandidate() {
+			stalePendingCandidateCount++;
+		}
+
+		private synchronized void recordApply(long durationNanos, boolean succeeded) {
+			if (succeeded) {
+				applySuccessCount++;
+			} else {
+				applyFailureCount++;
+			}
+			totalApplyDurationNanos += durationNanos;
+			if (durationNanos > maxApplyDurationNanos) {
+				maxApplyDurationNanos = durationNanos;
+			}
+		}
+
+		private synchronized ResourceReloadMetricsSnapshot snapshot(int registeredCount,
+				int pendingCount) {
+			return new ResourceReloadMetricsSnapshot(registeredCount, pendingCount,
+					requestCount, unknownResourceRequestCount,
+					loadSuccessCount, loadFailureCount,
+					validationSuccessCount, validationFailureCount,
+					preparedCandidateCount, coalescedCandidateCount,
+					stalePreparedCandidateCount, applySuccessCount,
+					applyFailureCount, stalePendingCandidateCount,
+					totalLoadDurationNanos, maxLoadDurationNanos,
+					totalValidationDurationNanos, maxValidationDurationNanos,
+					totalApplyDurationNanos, maxApplyDurationNanos);
 		}
 	}
 }

@@ -632,6 +632,7 @@ public class RPServerManager extends Thread {
 				if (delay < 0) {
 					logger.warn(RPTurnDiagnostics.formatSlowTurn(completedTurn, elapsedNanos,
 							turnDuration, turnStartNanos, phaseEndsNanos,
+							ResourceReloadService.getInstance().getMetricsSnapshot(),
 							world.getWorldTaskScheduler().getMetricsSnapshot(),
 							perceptionTurnMetrics.snapshot(
 									MessageS2CPerception.getPrecomputedPerceptionCacheHitCount(),
