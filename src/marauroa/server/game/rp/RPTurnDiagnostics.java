@@ -51,7 +51,8 @@ final class RPTurnDiagnostics {
 	static String formatSlowTurn(long turnNumber, long elapsedNanos, long budgetMillis,
 			long turnStartNanos, long[] phaseEndsNanos,
 			WorldTaskMetricsSnapshot worldTaskMetrics,
-			PerceptionTurnMetricsSnapshot perceptionMetrics) {
+			PerceptionTurnMetricsSnapshot perceptionMetrics,
+			InstanceZoneMetricsSnapshot instanceMetrics) {
 		if (phaseEndsNanos == null || phaseEndsNanos.length != PHASE_COUNT) {
 			throw new IllegalArgumentException("RP turn phase timestamp count must be " + PHASE_COUNT);
 		}
@@ -76,7 +77,7 @@ final class RPTurnDiagnostics {
 			}
 		}
 
-		StringBuilder result = new StringBuilder(512);
+		StringBuilder result = new StringBuilder(640);
 		result.append("Slow RP turn [turn=").append(turnNumber)
 				.append(", elapsedMs=").append(toMillis(elapsedNanos))
 				.append(", budgetMs=").append(budgetMillis)
@@ -117,6 +118,19 @@ final class RPTurnDiagnostics {
 					.append(",slowestSendMs=").append(toMillis(perceptionMetrics.getSlowestSendDurationNanos()))
 					.append(",cacheHits=").append(perceptionMetrics.getCacheHitCount())
 					.append(",cacheMisses=").append(perceptionMetrics.getCacheMissCount())
+					.append('}');
+		}
+
+		if (instanceMetrics != null) {
+			result.append(", instances={active=")
+					.append(instanceMetrics.getActiveInstanceCount())
+					.append(",members=").append(instanceMetrics.getActiveMembershipCount())
+					.append(",created=").append(instanceMetrics.getCreatedInstanceCount())
+					.append(",destroyed=").append(instanceMetrics.getDestroyedInstanceCount())
+					.append(",createFailures=").append(instanceMetrics.getCreateFailureCount())
+					.append(",destroyFailures=").append(instanceMetrics.getDestroyFailureCount())
+					.append(",maxCreateMs=").append(toMillis(instanceMetrics.getMaxCreateDurationNanos()))
+					.append(",maxDestroyMs=").append(toMillis(instanceMetrics.getMaxDestroyDurationNanos()))
 					.append('}');
 		}
 
