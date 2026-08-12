@@ -40,6 +40,7 @@ import marauroa.common.resource.PersistenceResourceProvider;
 import marauroa.common.resource.ResourceReloadService;
 import marauroa.server.db.TransactionPool;
 import marauroa.server.game.ActionInvalidException;
+import marauroa.server.game.ContentTransferMetrics;
 import marauroa.server.game.Statistics;
 import marauroa.server.game.container.ClientState;
 import marauroa.server.game.container.PlayerEntry;
@@ -111,6 +112,7 @@ public class RPServerManager extends Thread {
 	private Map<RPObject, List<TransferContent>> contentsToTransfer;
 
 	private final PerceptionTurnMetrics perceptionTurnMetrics = new PerceptionTurnMetrics();
+	private final TransferTurnMetrics transferTurnMetrics = new TransferTurnMetrics();
 
 	/**
 	 * Constructor
@@ -549,6 +551,7 @@ public class RPServerManager extends Thread {
 	}
 
 	private void deliverTransferContent() {
+		transferTurnMetrics.reset();
 		synchronized (contentsToTransfer) {
 			for (Map.Entry<RPObject, List<TransferContent>> val : contentsToTransfer.entrySet()) {
 				RPObject target = val.getKey();
@@ -577,11 +580,33 @@ public class RPServerManager extends Thread {
 				}
 				entry.contentToTransfer.addAll(content);
 
+				int cacheableCount = 0;
+				long rawPayloadBytes = 0;
+				for (TransferContent item : content) {
+					if (item != null) {
+						if (item.cacheable) {
+							cacheableCount++;
+						}
+						if (item.data != null) {
+							rawPayloadBytes += item.data.length;
+						}
+					}
+				}
+
 				MessageS2CTransferREQ mes = new MessageS2CTransferREQ(entry.channel, content);
 				mes.setClientID(entry.clientid);
 				mes.setProtocolVersion(entry.getProtocolVersion());
 
-				netMan.sendMessage(mes);
+				long sendStartNanos = System.nanoTime();
+				boolean sendSucceeded = false;
+				try {
+					netMan.sendMessage(mes);
+					sendSucceeded = true;
+				} finally {
+					transferTurnMetrics.recordOfferBatch(entry.clientid, content.size(),
+							cacheableCount, rawPayloadBytes, sendSucceeded,
+							System.nanoTime() - sendStartNanos);
+				}
 			}
 
 			contentsToTransfer.clear();
@@ -637,6 +662,8 @@ public class RPServerManager extends Thread {
 							perceptionTurnMetrics.snapshot(
 									MessageS2CPerception.getPrecomputedPerceptionCacheHitCount(),
 									MessageS2CPerception.getPrecomputedPerceptionCacheMissCount()),
+							transferTurnMetrics.snapshot(),
+							ContentTransferMetrics.getInstance().getMetricsSnapshot(),
 							world.getInstanceZoneManager().getMetricsSnapshot()));
 				} else if (delay > turnDuration) {
 					logger.error("Delay bigger than Turn duration. [delay: " + delay
