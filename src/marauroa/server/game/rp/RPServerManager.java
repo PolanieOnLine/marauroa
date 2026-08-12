@@ -110,6 +110,8 @@ public class RPServerManager extends Thread {
 
 	private Map<RPObject, List<TransferContent>> contentsToTransfer;
 
+	private final PerceptionTurnMetrics perceptionTurnMetrics = new PerceptionTurnMetrics();
+
 	/**
 	 * Constructor
 	 *
@@ -450,6 +452,7 @@ public class RPServerManager extends Thread {
 
 	private void buildPerceptions() {
 		playersToRemove.clear();
+		perceptionTurnMetrics.reset();
 
 		/** We reset the cache at Perceptions */
 		MessageS2CPerception.clearPrecomputedPerception();
@@ -464,8 +467,18 @@ public class RPServerManager extends Thread {
 				}
 
 				if (entry.state == ClientState.GAME_BEGIN) {
+					long buildStartNanos = System.nanoTime();
 					Perception perception = getPlayerPerception(entry);
-					sendPlayerPerception(entry, perception, entry.object);
+					long sendStartNanos = System.nanoTime();
+					try {
+						sendPlayerPerception(entry, perception, entry.object);
+					} finally {
+						if (perception != null) {
+							long sendEndNanos = System.nanoTime();
+							perceptionTurnMetrics.record(entry.clientid, perception.type,
+									sendStartNanos - buildStartNanos, sendEndNanos - sendStartNanos);
+						}
+					}
 				}
 			} catch (Exception e) {
 				logger.error("Removing player(" + entry.clientid + ") because it caused a Exception while contacting it", e);
@@ -619,7 +632,10 @@ public class RPServerManager extends Thread {
 				if (delay < 0) {
 					logger.warn(RPTurnDiagnostics.formatSlowTurn(completedTurn, elapsedNanos,
 							turnDuration, turnStartNanos, phaseEndsNanos,
-							world.getWorldTaskScheduler().getMetricsSnapshot()));
+							world.getWorldTaskScheduler().getMetricsSnapshot(),
+							perceptionTurnMetrics.snapshot(
+									MessageS2CPerception.getPrecomputedPerceptionCacheHitCount(),
+									MessageS2CPerception.getPrecomputedPerceptionCacheMissCount())));
 				} else if (delay > turnDuration) {
 					logger.error("Delay bigger than Turn duration. [delay: " + delay
 							+ "] [turnDuration:" + turnDuration + "]");

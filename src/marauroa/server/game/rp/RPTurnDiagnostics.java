@@ -50,7 +50,8 @@ final class RPTurnDiagnostics {
 
 	static String formatSlowTurn(long turnNumber, long elapsedNanos, long budgetMillis,
 			long turnStartNanos, long[] phaseEndsNanos,
-			WorldTaskMetricsSnapshot worldTaskMetrics) {
+			WorldTaskMetricsSnapshot worldTaskMetrics,
+			PerceptionTurnMetricsSnapshot perceptionMetrics) {
 		if (phaseEndsNanos == null || phaseEndsNanos.length != PHASE_COUNT) {
 			throw new IllegalArgumentException("RP turn phase timestamp count must be " + PHASE_COUNT);
 		}
@@ -100,6 +101,22 @@ final class RPTurnDiagnostics {
 					.append(",maxTaskMs=").append(toMillis(worldTaskMetrics.getMaxTaskDurationNanos()))
 					.append(",executedTotal=").append(worldTaskMetrics.getExecutedTaskCount())
 					.append(",failedTotal=").append(worldTaskMetrics.getFailedTaskCount())
+					.append('}');
+		}
+
+		if (perceptionMetrics != null) {
+			result.append(", perceptions={players=")
+					.append(perceptionMetrics.getPlayerCount())
+					.append(",sync=").append(perceptionMetrics.getSyncCount())
+					.append(",delta=").append(perceptionMetrics.getDeltaCount())
+					.append(",buildMs=").append(toMillis(perceptionMetrics.getTotalBuildDurationNanos()))
+					.append(",sendMs=").append(toMillis(perceptionMetrics.getTotalSendDurationNanos()))
+					.append(",slowestClient=").append(perceptionMetrics.getSlowestClientId())
+					.append(",slowestMs=").append(toMillis(perceptionMetrics.getSlowestPlayerDurationNanos()))
+					.append(",slowestBuildMs=").append(toMillis(perceptionMetrics.getSlowestBuildDurationNanos()))
+					.append(",slowestSendMs=").append(toMillis(perceptionMetrics.getSlowestSendDurationNanos()))
+					.append(",cacheHits=").append(perceptionMetrics.getCacheHitCount())
+					.append(",cacheMisses=").append(perceptionMetrics.getCacheMissCount())
 					.append('}');
 		}
 

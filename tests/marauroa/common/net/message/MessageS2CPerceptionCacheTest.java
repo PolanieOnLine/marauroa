@@ -11,12 +11,14 @@
  ***************************************************************************/
 package marauroa.common.net.message;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
 
 import java.io.IOException;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import marauroa.common.game.IRPZone;
@@ -24,6 +26,11 @@ import marauroa.common.game.Perception;
 import marauroa.common.game.RPObject;
 
 public class MessageS2CPerceptionCacheTest {
+
+	@Before
+	public void clearCacheBeforeTest() {
+		MessageS2CPerception.clearPrecomputedPerception();
+	}
 
 	@After
 	public void clearCache() {
@@ -45,6 +52,8 @@ public class MessageS2CPerceptionCacheTest {
 				.get().get(bobMessage);
 
 		assertNotSame(alicePayload, bobPayload);
+		assertEquals(0, MessageS2CPerception.getPrecomputedPerceptionCacheHitCount());
+		assertEquals(2, MessageS2CPerception.getPrecomputedPerceptionCacheMissCount());
 	}
 
 	@Test
@@ -61,6 +70,8 @@ public class MessageS2CPerceptionCacheTest {
 				.get().get(second);
 
 		assertSame(firstPayload, secondPayload);
+		assertEquals(1, MessageS2CPerception.getPrecomputedPerceptionCacheHitCount());
+		assertEquals(1, MessageS2CPerception.getPrecomputedPerceptionCacheMissCount());
 	}
 
 	private Perception perceptionWithObject(final int id) {
