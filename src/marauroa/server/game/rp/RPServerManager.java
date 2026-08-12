@@ -672,6 +672,7 @@ public class RPServerManager extends Thread {
 					/* Move zone to the next turn */
 					world.nextTurn();
 					ResourceReloadService.getInstance().processPendingReloads();
+					world.getWorldTaskScheduler().processNextTurn();
 					timeEnds[7] = System.currentTimeMillis();
 
 					turn++;
