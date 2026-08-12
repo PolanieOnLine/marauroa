@@ -606,25 +606,23 @@ public class RPServerManager extends Thread {
 			long start = System.nanoTime();
 			long stop;
 			long delay;
-			long timeStart = 0;
-			long[] timeEnds = new long[12];
+			long turnStartNanos = 0;
+			long completedTurn = -1;
+			long[] phaseEndsNanos = new long[RPTurnDiagnostics.PHASE_COUNT];
 
 			while (keepRunning) {
 				stop = System.nanoTime();
+				long elapsedNanos = stop - start;
 
-				logger.debug("Turn time elapsed: " + ((stop - start) / 1000) + " microsecs");
-				delay = turnDuration - ((stop - start) / 1000000);
+				logger.debug("Turn time elapsed: " + (elapsedNanos / 1000) + " microsecs");
+				delay = turnDuration - (elapsedNanos / 1000000);
 				if (delay < 0) {
-					StringBuilder sb = new StringBuilder();
-					for (long timeEnd : timeEnds) {
-						sb.append(" " + (timeEnd - timeStart));
-					}
-
-					logger.warn("Turn duration overflow by " + (-delay) + " ms: "
-					        + sb.toString());
+					logger.warn(RPTurnDiagnostics.formatSlowTurn(completedTurn, elapsedNanos,
+							turnDuration, turnStartNanos, phaseEndsNanos,
+							world.getWorldTaskScheduler().getMetricsSnapshot()));
 				} else if (delay > turnDuration) {
 					logger.error("Delay bigger than Turn duration. [delay: " + delay
-					        + "] [turnDuration:" + turnDuration + "]");
+							+ "] [turnDuration:" + turnDuration + "]");
 					delay = 0;
 				}
 
@@ -638,59 +636,62 @@ public class RPServerManager extends Thread {
 				}
 
 				start = System.nanoTime();
-				timeStart = System.currentTimeMillis();
+				turnStartNanos = start;
 
 				playerContainer.getLock().requestWriteLock();
 
 				try {
-					timeEnds[0] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.WRITE_LOCK] = System.nanoTime();
 
 					/* Get actions that players send */
 					scheduler.nextTurn();
-					timeEnds[1] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.ACTION_QUEUE] = System.nanoTime();
 
 					/* Execute them all */
 					scheduler.visit(ruleProcessor);
-					timeEnds[2] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.ACTIONS] = System.nanoTime();
 
 					/* Compute game RP rules to move to the next turn */
 					ruleProcessor.endTurn();
-					timeEnds[3] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.END_TURN] = System.nanoTime();
 
 					/* Send content that is waiting to players */
 					deliverTransferContent();
-					timeEnds[4] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.TRANSFERS] = System.nanoTime();
 
 					/* Tell player what happened */
 					buildPerceptions();
-					timeEnds[5] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.PERCEPTIONS] = System.nanoTime();
 
 					/* save players regularly to the db */
 					savePlayersPeriodicly();
-					timeEnds[6] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.PLAYER_SAVE] = System.nanoTime();
 
 					/* Move zone to the next turn */
 					world.nextTurn();
+					phaseEndsNanos[RPTurnDiagnostics.WORLD_NEXT_TURN] = System.nanoTime();
 					ResourceReloadService.getInstance().processPendingReloads();
+					phaseEndsNanos[RPTurnDiagnostics.RESOURCE_RELOAD] = System.nanoTime();
 					world.getWorldTaskScheduler().processNextTurn();
-					timeEnds[7] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.WORLD_TASKS] = System.nanoTime();
 
+					completedTurn = turn;
 					turn++;
 
 					ruleProcessor.beginTurn();
-					timeEnds[8] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.BEGIN_TURN] = System.nanoTime();
 				} finally {
 					playerContainer.getLock().releaseLock();
-					timeEnds[9] = System.currentTimeMillis();
+					phaseEndsNanos[RPTurnDiagnostics.UNLOCK] = System.nanoTime();
 				}
 				try {
 					stats.set("Objects now", world.size());
-				} catch ( ConcurrentModificationException e) {
+				} catch (ConcurrentModificationException e) {
 					//TODO: size is obviously not threadsafe as it asks the underlying zone.objects for its sizes, which are not threadsafe.
 				}
-				timeEnds[10] = System.currentTimeMillis();
+				phaseEndsNanos[RPTurnDiagnostics.STATISTICS] = System.nanoTime();
 				TransactionPool.get().kickHangingTransactionsOfThisThread();
-				timeEnds[11] = System.currentTimeMillis();
+				phaseEndsNanos[RPTurnDiagnostics.TRANSACTION_CLEANUP] = System.nanoTime();
 			}
 		} catch (Throwable e) {
 			logger.error("Unhandled exception, server will shut down.", e);
@@ -698,7 +699,6 @@ public class RPServerManager extends Thread {
 			isfinished = true;
 		}
 	}
-
 	private void savePlayersPeriodicly() {
 		for (PlayerEntry entry : playerContainer) {
 			try {
