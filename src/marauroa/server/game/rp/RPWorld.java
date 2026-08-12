@@ -228,6 +228,7 @@ public class RPWorld implements Iterable<IRPZone> {
 					+ zoneid.getID());
 		}
 
+		worldTaskScheduler.cancelOwner(WorldTaskOwner.zone(zoneid.getID()));
 		IRPZone zone = detachRPZone(zoneid);
 		if (zone != null) {
 			zone.onFinish();

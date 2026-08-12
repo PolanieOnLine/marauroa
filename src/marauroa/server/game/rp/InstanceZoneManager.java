@@ -203,6 +203,8 @@ public final class InstanceZoneManager {
 
 	private void destroy(ManagedInstance managed) throws Exception {
 		IRPZone.ID runtimeId = managed.descriptor.getRuntimeZoneId();
+		world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.instance(runtimeId.getID()));
+		world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.zone(runtimeId.getID()));
 		byDescriptor.remove(managed.descriptor);
 		byZoneId.remove(runtimeId);
 

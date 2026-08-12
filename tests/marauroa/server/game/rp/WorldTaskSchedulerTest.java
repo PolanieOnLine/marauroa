@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import marauroa.common.game.IRPZone;
+
 import org.junit.Before;
 import org.junit.Test;
 
@@ -164,6 +166,47 @@ public class WorldTaskSchedulerTest {
 		scheduler.processNextTurn();
 		assertEquals(1, calls.size());
 		assertEquals("after", calls.get(0));
+	}
+
+	@Test
+	public void removingZoneCancelsTasksOwnedByZone() throws Exception {
+		RPWorld world = new RPWorld();
+		MarauroaRPZone zone = new MarauroaRPZone("temporary-zone");
+		world.addRPZone(zone);
+		WorldTaskScheduler worldScheduler = world.getWorldTaskScheduler();
+		worldScheduler.scheduleNextTurn(WorldTaskOwner.zone(zone.getID().getID()), task("stale-zone"));
+		assertEquals(1, worldScheduler.getPendingTaskCount());
+
+		world.removeRPZone(zone.getID());
+		assertFalse(world.hasRPZone(zone.getID()));
+		assertEquals(0, worldScheduler.getPendingTaskCount());
+		worldScheduler.processNextTurn();
+		assertTrue(calls.isEmpty());
+	}
+
+	@Test
+	public void destroyingInstanceCancelsInstanceAndZoneOwnedTasks() throws Exception {
+		final RPWorld world = new RPWorld();
+		final InstanceZoneManager instances = world.getInstanceZoneManager();
+		IRPZone zone = instances.acquire("maze", "run", InstanceScope.player("alice"),
+				"alice", new InstanceZoneFactory() {
+					@Override
+					public IRPZone create(InstanceZoneDescriptor descriptor) {
+						return new MarauroaRPZone(descriptor.getRuntimeZoneIdString());
+					}
+				});
+		String runtimeZoneId = zone.getID().getID();
+		world.getWorldTaskScheduler().scheduleNextTurn(
+				WorldTaskOwner.instance(runtimeZoneId), task("stale-instance"));
+		world.getWorldTaskScheduler().scheduleNextTurn(
+				WorldTaskOwner.zone(runtimeZoneId), task("stale-zone"));
+		assertEquals(2, world.getWorldTaskScheduler().getPendingTaskCount());
+
+		instances.release(zone.getID(), "alice");
+		assertFalse(world.hasRPZone(zone.getID()));
+		assertEquals(0, world.getWorldTaskScheduler().getPendingTaskCount());
+		world.getWorldTaskScheduler().processNextTurn();
+		assertTrue(calls.isEmpty());
 	}
 
 	private WorldTask task(final String value) {
