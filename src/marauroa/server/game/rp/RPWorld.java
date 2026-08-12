@@ -57,12 +57,16 @@ public class RPWorld implements Iterable<IRPZone> {
 	/** Runtime-only lifecycle manager for ephemeral zone instances. */
 	private final InstanceZoneManager instanceZoneManager;
 
+	/** Tasks executed on deterministic RP safe boundaries. */
+	private final WorldTaskScheduler worldTaskScheduler;
+
 	/**
 	 * creates a new RPWorld. Note this class is designed as a singleton.
 	 */
 	protected RPWorld() {
 		zones = new ConcurrentHashMap<IRPZone.ID, IRPZone>();
 		instanceZoneManager = new InstanceZoneManager(this);
+		worldTaskScheduler = new WorldTaskScheduler();
 	}
 
 	/**
@@ -105,6 +109,11 @@ public class RPWorld implements Iterable<IRPZone> {
 	 */
 	public InstanceZoneManager getInstanceZoneManager() {
 		return instanceZoneManager;
+	}
+
+	/** Returns the scheduler executed at the world turn safe boundary. */
+	public WorldTaskScheduler getWorldTaskScheduler() {
+		return worldTaskScheduler;
 	}
 
 	/** This method is called when RPWorld is created by RPServerManager */
@@ -219,6 +228,7 @@ public class RPWorld implements Iterable<IRPZone> {
 					+ zoneid.getID());
 		}
 
+		worldTaskScheduler.cancelOwner(WorldTaskOwner.zone(zoneid.getID()));
 		IRPZone zone = detachRPZone(zoneid);
 		if (zone != null) {
 			zone.onFinish();
