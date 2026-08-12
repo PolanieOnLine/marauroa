@@ -54,11 +54,15 @@ public class RPWorld implements Iterable<IRPZone> {
 
 	IRPZone defaultZone;
 
+	/** Runtime-only lifecycle manager for ephemeral zone instances. */
+	private final InstanceZoneManager instanceZoneManager;
+
 	/**
 	 * creates a new RPWorld. Note this class is designed as a singleton.
 	 */
 	protected RPWorld() {
 		zones = new ConcurrentHashMap<IRPZone.ID, IRPZone>();
+		instanceZoneManager = new InstanceZoneManager(this);
 	}
 
 	/**
@@ -94,6 +98,15 @@ public class RPWorld implements Iterable<IRPZone> {
 		return instance;
 	}
 
+	/**
+	 * Returns the runtime manager for ephemeral instance zones.
+	 *
+	 * @return instance zone manager owned by this world
+	 */
+	public InstanceZoneManager getInstanceZoneManager() {
+		return instanceZoneManager;
+	}
+
 	/** This method is called when RPWorld is created by RPServerManager */
 	public void onInit() {
 		// implement in subclasses
@@ -102,7 +115,18 @@ public class RPWorld implements Iterable<IRPZone> {
 	/** This method is called when server is going to shutdown. */
 	public void onFinish() {
 		/*
-		 * Call onFinish for each of the zones.
+		 * Ephemeral instances must be detached before ordinary zones are
+		 * finished. Their factory cleanup deliberately bypasses RPZone
+		 * persistence.
+		 */
+		try {
+			instanceZoneManager.destroyAll();
+		} catch (Exception e) {
+			logger.warn("Exception while destroying ephemeral instance zones", e);
+		}
+
+		/*
+		 * Call onFinish for each of the remaining ordinary zones.
 		 */
 		for (IRPZone zone : zones.values()) {
 			try {
@@ -190,13 +214,27 @@ public class RPWorld implements Iterable<IRPZone> {
 	 * @throws Exception caused by onFinish
 	 */
 	public IRPZone removeRPZone(IRPZone.ID zoneid) throws Exception {
-		IRPZone zone=zones.remove(zoneid);
-
-		if(zone!=null) {
-		  zone.onFinish();
+		if (instanceZoneManager.isInstanceZone(zoneid)) {
+			throw new IllegalStateException("Managed instance zones must be released through InstanceZoneManager: "
+					+ zoneid.getID());
 		}
 
+		IRPZone zone = detachRPZone(zoneid);
+		if (zone != null) {
+			zone.onFinish();
+		}
 		return zone;
+	}
+
+	/**
+	 * Detaches a zone without invoking its persistence/finish lifecycle.
+	 *
+	 * Package-private on purpose. InstanceZoneManager uses this path for
+	 * explicitly ephemeral zones and then delegates transient cleanup to the
+	 * game supplied InstanceZoneFactory.
+	 */
+	IRPZone detachRPZone(IRPZone.ID zoneid) {
+		return zones.remove(zoneid);
 	}
 
 	/**
@@ -208,14 +246,7 @@ public class RPWorld implements Iterable<IRPZone> {
 	 * @throws Exception caused by onFinish
 	 */
 	public IRPZone removeRPZone(RPObject.ID objectid) throws Exception {
-		IRPZone.ID zoneid=new IRPZone.ID(objectid.getZoneID());
-		IRPZone zone=zones.remove(zoneid);
-
-		if(zone!=null) {
-		  zone.onFinish();
-		}
-
-		return zone;
+		return removeRPZone(new IRPZone.ID(objectid.getZoneID()));
 	}
 
 	/**
