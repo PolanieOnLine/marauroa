@@ -77,6 +77,24 @@ If a valid candidate is waiting and a later reload attempt is invalid, the inval
 
 Unregistering a resource discards its pending candidate.
 
+## Runtime metrics
+
+`ResourceReloadService.getMetricsSnapshot()` returns an immutable, process-local `ResourceReloadMetricsSnapshot` for observability tooling.
+
+The snapshot reports:
+
+- current registered resource and pending candidate counts,
+- reload request and unknown-id counts,
+- successful and failed load and validation phases,
+- successfully prepared candidates and candidates coalesced by a newer valid request,
+- prepared or pending candidates rejected because their registration became stale,
+- successful and failed safe-point apply operations,
+- total and maximum duration of load, validation and apply work.
+
+Load and validation durations describe work performed on the requesting thread. Apply duration describes only the safe-point state swap on the RP thread. The slow-turn diagnostics may include these process-local counters as context, while the named `resourceReload` turn phase remains the measurement of the actual reload cost paid by that RP turn.
+
+Timing is collected only when reload work actually occurs. A server with no reload requests does not gain additional `System.nanoTime()` calls from these metrics on normal turns. Creating a metrics snapshot is also explicit and is not performed on every turn.
+
 ## Security boundary
 
 External admin tooling should request a registered resource **id**, not accept an arbitrary filesystem path from the caller. `getRegisteredResourceIds()` provides the known ids for future CLI, HTTP or administration adapters.
@@ -99,6 +117,4 @@ This mechanism does not:
 
 Games that never register a `ReloadableResource` keep their existing behaviour. The normal turn loop performs only an empty queue check at the reload safe point.
 
-## Follow-up work
-
-The next game-side step should adapt one concrete data repository, preferably item definitions or another resource with a clear detached parser/validator and atomic repository swap. That integration should have tests for valid reload, malformed input, duplicate/reference validation and preservation of the previous active state.
+The metrics are runtime diagnostics only. They are not serialized, do not alter resource data, and reset when the process restarts.

@@ -3,6 +3,8 @@
  ***************************************************************************/
 package marauroa.server.game.rp;
 
+import marauroa.common.resource.ResourceReloadMetricsSnapshot;
+
 /**
  * Formats slow RP turn diagnostics from monotonic phase timestamps.
  *
@@ -50,6 +52,7 @@ final class RPTurnDiagnostics {
 
 	static String formatSlowTurn(long turnNumber, long elapsedNanos, long budgetMillis,
 			long turnStartNanos, long[] phaseEndsNanos,
+			ResourceReloadMetricsSnapshot reloadMetrics,
 			WorldTaskMetricsSnapshot worldTaskMetrics,
 			PerceptionTurnMetricsSnapshot perceptionMetrics,
 			InstanceZoneMetricsSnapshot instanceMetrics) {
@@ -77,7 +80,7 @@ final class RPTurnDiagnostics {
 			}
 		}
 
-		StringBuilder result = new StringBuilder(640);
+		StringBuilder result = new StringBuilder(800);
 		result.append("Slow RP turn [turn=").append(turnNumber)
 				.append(", elapsedMs=").append(toMillis(elapsedNanos))
 				.append(", budgetMs=").append(budgetMillis)
@@ -93,6 +96,23 @@ final class RPTurnDiagnostics {
 			result.append(PHASE_NAMES[i]).append('=').append(toMillis(phaseDurations[i]));
 		}
 		result.append('}');
+
+		if (reloadMetrics != null) {
+			result.append(", reload={registered=")
+					.append(reloadMetrics.getRegisteredResourceCount())
+					.append(",pending=").append(reloadMetrics.getPendingCandidateCount())
+					.append(",requests=").append(reloadMetrics.getRequestCount())
+					.append(",prepared=").append(reloadMetrics.getPreparedCandidateCount())
+					.append(",coalesced=").append(reloadMetrics.getCoalescedCandidateCount())
+					.append(",loadFailures=").append(reloadMetrics.getLoadFailureCount())
+					.append(",validationFailures=").append(reloadMetrics.getValidationFailureCount())
+					.append(",applySuccess=").append(reloadMetrics.getApplySuccessCount())
+					.append(",applyFailures=").append(reloadMetrics.getApplyFailureCount())
+					.append(",maxLoadMs=").append(toMillis(reloadMetrics.getMaxLoadDurationNanos()))
+					.append(",maxValidationMs=").append(toMillis(reloadMetrics.getMaxValidationDurationNanos()))
+					.append(",maxApplyMs=").append(toMillis(reloadMetrics.getMaxApplyDurationNanos()))
+					.append('}');
+		}
 
 		if (worldTaskMetrics != null) {
 			result.append(", worldTasks={pending=")
