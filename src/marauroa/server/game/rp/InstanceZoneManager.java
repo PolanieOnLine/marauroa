@@ -30,6 +30,15 @@ public final class InstanceZoneManager {
 	private final RPWorld world;
 	private final Map<InstanceZoneDescriptor, ManagedInstance> byDescriptor;
 	private final Map<IRPZone.ID, ManagedInstance> byZoneId;
+	private int activeMembershipCount;
+	private long createdInstanceCount;
+	private long createFailureCount;
+	private long destroyedInstanceCount;
+	private long destroyFailureCount;
+	private long totalCreateDurationNanos;
+	private long maxCreateDurationNanos;
+	private long totalDestroyDurationNanos;
+	private long maxDestroyDurationNanos;
 
 	InstanceZoneManager(RPWorld world) {
 		if (world == null) {
@@ -56,18 +65,21 @@ public final class InstanceZoneManager {
 
 		ManagedInstance existing = byDescriptor.get(descriptor);
 		if (existing != null) {
-			existing.members.add(normalizedMember);
+			if (existing.members.add(normalizedMember)) {
+				activeMembershipCount++;
+			}
 			return existing.zone;
 		}
 
-		IRPZone.ID runtimeId = descriptor.getRuntimeZoneId();
-		if (world.hasRPZone(runtimeId)) {
-			throw new IllegalStateException("Runtime zone id is already in use outside the instance registry: "
-					+ runtimeId.getID());
-		}
-
+		long createStartNanos = System.nanoTime();
 		IRPZone zone = null;
 		try {
+			IRPZone.ID runtimeId = descriptor.getRuntimeZoneId();
+			if (world.hasRPZone(runtimeId)) {
+				throw new IllegalStateException("Runtime zone id is already in use outside the instance registry: "
+						+ runtimeId.getID());
+			}
+
 			zone = factory.create(descriptor);
 			if (zone == null) {
 				throw new IllegalArgumentException("instance zone factory returned null for " + descriptor);
@@ -82,8 +94,11 @@ public final class InstanceZoneManager {
 			managed.members.add(normalizedMember);
 			byDescriptor.put(descriptor, managed);
 			byZoneId.put(runtimeId, managed);
+			activeMembershipCount++;
+			createdInstanceCount++;
 			return zone;
 		} catch (Exception e) {
+			createFailureCount++;
 			if (zone != null) {
 				try {
 					factory.destroy(descriptor, zone);
@@ -92,6 +107,8 @@ public final class InstanceZoneManager {
 				}
 			}
 			throw e;
+		} finally {
+			recordCreateDuration(System.nanoTime() - createStartNanos);
 		}
 	}
 
@@ -110,6 +127,7 @@ public final class InstanceZoneManager {
 		if (managed == null || !managed.members.remove(normalizedMember)) {
 			return false;
 		}
+		activeMembershipCount--;
 
 		if (managed.members.isEmpty()) {
 			destroy(managed);
@@ -134,6 +152,7 @@ public final class InstanceZoneManager {
 			if (!managed.members.remove(normalizedMember)) {
 				continue;
 			}
+			activeMembershipCount--;
 			released++;
 			if (managed.members.isEmpty()) {
 				try {
@@ -172,6 +191,14 @@ public final class InstanceZoneManager {
 		return byDescriptor.size();
 	}
 
+	/** Returns one coherent immutable view of process-local lifecycle metrics. */
+	public synchronized InstanceZoneMetricsSnapshot getMetricsSnapshot() {
+		return new InstanceZoneMetricsSnapshot(byDescriptor.size(), activeMembershipCount,
+				createdInstanceCount, createFailureCount, destroyedInstanceCount, destroyFailureCount,
+				totalCreateDurationNanos, maxCreateDurationNanos,
+				totalDestroyDurationNanos, maxDestroyDurationNanos);
+	}
+
 	/** Returns an immutable snapshot of active instance descriptors. */
 	public synchronized Collection<InstanceZoneDescriptor> getInstances() {
 		return java.util.Collections.unmodifiableList(
@@ -202,31 +229,58 @@ public final class InstanceZoneManager {
 	}
 
 	private void destroy(ManagedInstance managed) throws Exception {
-		IRPZone.ID runtimeId = managed.descriptor.getRuntimeZoneId();
-		world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.instance(runtimeId.getID()));
-		world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.zone(runtimeId.getID()));
-		byDescriptor.remove(managed.descriptor);
-		byZoneId.remove(runtimeId);
-
-		IRPZone detached = world.detachRPZone(runtimeId);
-		Exception failure = null;
-		if (detached != managed.zone) {
-			failure = new IllegalStateException("Managed instance zone was not attached as expected: "
-					+ runtimeId.getID());
-		}
-
+		long destroyStartNanos = System.nanoTime();
+		boolean failed = true;
 		try {
-			managed.factory.destroy(managed.descriptor, managed.zone);
-		} catch (Exception e) {
-			if (failure == null) {
-				failure = e;
-			} else {
-				failure.addSuppressed(e);
-			}
-		}
+			IRPZone.ID runtimeId = managed.descriptor.getRuntimeZoneId();
+			world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.instance(runtimeId.getID()));
+			world.getWorldTaskScheduler().cancelOwner(WorldTaskOwner.zone(runtimeId.getID()));
+			byDescriptor.remove(managed.descriptor);
+			byZoneId.remove(runtimeId);
+			activeMembershipCount -= managed.members.size();
+			managed.members.clear();
+			destroyedInstanceCount++;
 
-		if (failure != null) {
-			throw failure;
+			IRPZone detached = world.detachRPZone(runtimeId);
+			Exception failure = null;
+			if (detached != managed.zone) {
+				failure = new IllegalStateException("Managed instance zone was not attached as expected: "
+						+ runtimeId.getID());
+			}
+
+			try {
+				managed.factory.destroy(managed.descriptor, managed.zone);
+			} catch (Exception e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+
+			if (failure != null) {
+				throw failure;
+			}
+			failed = false;
+		} finally {
+			if (failed) {
+				destroyFailureCount++;
+			}
+			recordDestroyDuration(System.nanoTime() - destroyStartNanos);
+		}
+	}
+
+	private void recordCreateDuration(long durationNanos) {
+		totalCreateDurationNanos += durationNanos;
+		if (durationNanos > maxCreateDurationNanos) {
+			maxCreateDurationNanos = durationNanos;
+		}
+	}
+
+	private void recordDestroyDuration(long durationNanos) {
+		totalDestroyDurationNanos += durationNanos;
+		if (durationNanos > maxDestroyDurationNanos) {
+			maxDestroyDurationNanos = durationNanos;
 		}
 	}
 
