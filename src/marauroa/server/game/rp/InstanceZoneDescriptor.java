@@ -4,6 +4,8 @@
 package marauroa.server.game.rp;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
 import marauroa.common.game.IRPZone;
@@ -12,7 +14,8 @@ import marauroa.common.game.IRPZone;
  * Immutable logical identity of an ephemeral zone instance.
  */
 public final class InstanceZoneDescriptor {
-	private static final String RUNTIME_PREFIX = "__instance__.";
+	private static final String RUNTIME_PREFIX = "instance_";
+	private static final int HASH_BYTES = 16;
 
 	private final String baseZoneId;
 	private final String instanceId;
@@ -20,7 +23,7 @@ public final class InstanceZoneDescriptor {
 	private final String runtimeZoneId;
 
 	/**
-	 * Creates a descriptor and derives a collision-safe runtime zone id.
+	 * Creates a descriptor and derives a compact collision-resistant runtime zone id.
 	 *
 	 * @param baseZoneId logical/template zone identifier
 	 * @param instanceId stable id of this logical instance during its lifetime
@@ -59,16 +62,28 @@ public final class InstanceZoneDescriptor {
 	}
 
 	private String buildRuntimeZoneId() {
-		return RUNTIME_PREFIX
-				+ encode(baseZoneId) + "."
-				+ scope.getType().name().toLowerCase() + "."
-				+ encode(scope.getKey()) + "."
-				+ encode(instanceId);
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			updateDigest(digest, baseZoneId);
+			updateDigest(digest, scope.getType().name());
+			updateDigest(digest, scope.getKey());
+			updateDigest(digest, instanceId);
+			byte[] full = digest.digest();
+			byte[] compact = new byte[HASH_BYTES];
+			System.arraycopy(full, 0, compact, 0, HASH_BYTES);
+			return RUNTIME_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(compact);
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 is not available", e);
+		}
 	}
 
-	private static String encode(String value) {
-		return Base64.getUrlEncoder().withoutPadding()
-				.encodeToString(value.getBytes(StandardCharsets.UTF_8));
+	private static void updateDigest(MessageDigest digest, String value) {
+		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+		digest.update((byte) (bytes.length >>> 24));
+		digest.update((byte) (bytes.length >>> 16));
+		digest.update((byte) (bytes.length >>> 8));
+		digest.update((byte) bytes.length);
+		digest.update(bytes);
 	}
 
 	@Override
