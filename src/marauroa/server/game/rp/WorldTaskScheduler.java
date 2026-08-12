@@ -22,6 +22,14 @@ public final class WorldTaskScheduler {
 	private final Map<WorldTaskOwner, OwnerEpoch> ownerEpochs = new LinkedHashMap<WorldTaskOwner, OwnerEpoch>();
 	private long currentTurn;
 	private long sequence;
+	private long scheduledTaskCount;
+	private long executedTaskCount;
+	private long failedTaskCount;
+	private long totalTaskDurationNanos;
+	private long maxTaskDurationNanos;
+	private int lastBatchTaskCount;
+	private long lastBatchDurationNanos;
+	private long maxBatchDurationNanos;
 
 	public synchronized WorldTaskHandle scheduleNextTurn(WorldTaskOwner owner, WorldTask task) {
 		return scheduleInTurns(owner, 1, task);
@@ -49,6 +57,7 @@ public final class WorldTaskScheduler {
 			tasksByTurn.put(scheduled.dueTurn, turnTasks);
 		}
 		turnTasks.add(scheduled);
+		scheduledTaskCount++;
 		return scheduled;
 	}
 
@@ -88,19 +97,24 @@ public final class WorldTaskScheduler {
 	}
 
 	public synchronized int getPendingTaskCount() {
-		int total = 0;
-		for (List<ScheduledTask> tasks : tasksByTurn.values()) {
-			for (ScheduledTask task : tasks) {
-				if (!task.cancelled && !task.epoch.cancelled) {
-					total++;
-				}
-			}
-		}
-		return total;
+		return getPendingTaskCountUnsafe();
 	}
 
 	public synchronized long getCurrentTurn() {
 		return currentTurn;
+	}
+
+	/**
+	 * Returns one coherent, immutable view of the scheduler runtime metrics.
+	 *
+	 * Timing is collected only when at least one callback actually starts. An
+	 * unused scheduler therefore does not add nanoTime calls to the RP turn.
+	 */
+	public synchronized WorldTaskMetricsSnapshot getMetricsSnapshot() {
+		return new WorldTaskMetricsSnapshot(currentTurn, getPendingTaskCountUnsafe(),
+				scheduledTaskCount, executedTaskCount, failedTaskCount,
+				totalTaskDurationNanos, maxTaskDurationNanos,
+				lastBatchTaskCount, lastBatchDurationNanos, maxBatchDurationNanos);
 	}
 
 	/** Advances one safe-boundary turn and executes a detached snapshot. */
@@ -120,18 +134,31 @@ public final class WorldTaskScheduler {
 			}
 		}
 
+		long batchStartNanos = 0;
+		int batchTaskCount = 0;
 		for (ScheduledTask scheduled : due) {
 			if (!beginExecution(scheduled)) {
 				continue;
 			}
+			if (batchTaskCount == 0) {
+				batchStartNanos = System.nanoTime();
+			}
+			batchTaskCount++;
+			long taskStartNanos = System.nanoTime();
+			boolean failed = false;
 			try {
 				scheduled.task.run();
 			} catch (Exception e) {
+				failed = true;
 				logger.error("World task failed [owner=" + scheduled.owner + ", sequence="
 						+ scheduled.sequence + ", turn=" + processingTurn + "]", e);
+			} finally {
+				recordTaskExecution(System.nanoTime() - taskStartNanos, failed);
 			}
 		}
 		cleanupUnusedOwnerEpochs();
+		recordBatch(batchTaskCount,
+				batchTaskCount == 0 ? 0 : System.nanoTime() - batchStartNanos);
 	}
 
 	/**
@@ -167,6 +194,37 @@ public final class WorldTaskScheduler {
 			}
 		}
 		return true;
+	}
+
+	private int getPendingTaskCountUnsafe() {
+		int total = 0;
+		for (List<ScheduledTask> tasks : tasksByTurn.values()) {
+			for (ScheduledTask task : tasks) {
+				if (!task.cancelled && !task.epoch.cancelled) {
+					total++;
+				}
+			}
+		}
+		return total;
+	}
+
+	private synchronized void recordTaskExecution(long durationNanos, boolean failed) {
+		executedTaskCount++;
+		if (failed) {
+			failedTaskCount++;
+		}
+		totalTaskDurationNanos += durationNanos;
+		if (durationNanos > maxTaskDurationNanos) {
+			maxTaskDurationNanos = durationNanos;
+		}
+	}
+
+	private synchronized void recordBatch(int taskCount, long durationNanos) {
+		lastBatchTaskCount = taskCount;
+		lastBatchDurationNanos = durationNanos;
+		if (durationNanos > maxBatchDurationNanos) {
+			maxBatchDurationNanos = durationNanos;
+		}
 	}
 
 	private OwnerEpoch getOrCreateOwnerEpoch(WorldTaskOwner owner) {
