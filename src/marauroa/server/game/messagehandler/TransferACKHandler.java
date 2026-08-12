@@ -16,6 +16,7 @@ import marauroa.common.net.message.Message;
 import marauroa.common.net.message.MessageC2STransferACK;
 import marauroa.common.net.message.MessageS2CTransfer;
 import marauroa.common.net.message.TransferContent;
+import marauroa.server.game.ContentTransferMetrics;
 import marauroa.server.game.container.ClientState;
 import marauroa.server.game.container.PlayerEntry;
 
@@ -53,6 +54,12 @@ class TransferACKHandler extends MessageHandler {
 			msgTransfer.setClientID(clientid);
 			msgTransfer.setProtocolVersion(msg.getProtocolVersion());
 
+			int requestedFullCount = 0;
+			int cacheReuseCount = 0;
+			int sentCount = 0;
+			int missingCount = 0;
+			long rawPayloadBytes = 0;
+
 			/*
 			 * Handle Transfer ACK here. We iterate over the contents and send
 			 * them to client for those of them which client told us ACK.
@@ -60,6 +67,7 @@ class TransferACKHandler extends MessageHandler {
 			for (TransferContent content : msg.getContents()) {
 				TransferContent contentToTransfer = entry.getContent(content.name);
 				if (content.ack) {
+					requestedFullCount++;
 					logger.debug("Trying transfer content " + content);
 
 					/*
@@ -67,16 +75,21 @@ class TransferACKHandler extends MessageHandler {
 					 * waiting for being sent to it.
 					 */
 					if (contentToTransfer != null) {
+						int contentSize = contentToTransfer.data.length;
 						stats.add("Transfer content", 1);
-						stats.add("Tranfer content size", contentToTransfer.data.length);
+						stats.add("Tranfer content size", contentSize);
 
 						logger.debug("Transfering content " + contentToTransfer);
 						msgTransfer.addContent(contentToTransfer);
+						sentCount++;
+						rawPayloadBytes += contentSize;
 					} else {
+						missingCount++;
 						logger.warn("Cannot transfer content (" + content.name
 						        + ") because it is null");
 					}
 				} else {
+					cacheReuseCount++;
 					stats.add("Transfer content cache", 1);
 				}
 
@@ -86,8 +99,23 @@ class TransferACKHandler extends MessageHandler {
 			}
 
 			// send message, unless there is no content
-			if (!msgTransfer.isEmpty()) {
-				netMan.sendMessage(msgTransfer);
+			boolean sentBatch = !msgTransfer.isEmpty();
+			if (sentBatch) {
+				long sendStartNanos = System.nanoTime();
+				boolean sendSucceeded = false;
+				try {
+					netMan.sendMessage(msgTransfer);
+					sendSucceeded = true;
+				} finally {
+					ContentTransferMetrics.getInstance().recordAckBatch(clientid,
+							requestedFullCount, cacheReuseCount, sentCount, missingCount,
+							rawPayloadBytes, true, sendSucceeded,
+							System.nanoTime() - sendStartNanos);
+				}
+			} else {
+				ContentTransferMetrics.getInstance().recordAckBatch(clientid,
+						requestedFullCount, cacheReuseCount, sentCount, missingCount,
+						rawPayloadBytes, false, true, 0);
 			}
 
 		} catch (Exception e) {

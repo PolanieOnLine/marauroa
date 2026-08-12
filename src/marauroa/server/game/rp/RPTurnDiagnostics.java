@@ -4,6 +4,7 @@
 package marauroa.server.game.rp;
 
 import marauroa.common.resource.ResourceReloadMetricsSnapshot;
+import marauroa.server.game.ContentTransferMetricsSnapshot;
 
 /**
  * Formats slow RP turn diagnostics from monotonic phase timestamps.
@@ -55,6 +56,8 @@ final class RPTurnDiagnostics {
 			ResourceReloadMetricsSnapshot reloadMetrics,
 			WorldTaskMetricsSnapshot worldTaskMetrics,
 			PerceptionTurnMetricsSnapshot perceptionMetrics,
+			TransferTurnMetricsSnapshot transferMetrics,
+			ContentTransferMetricsSnapshot contentTransferMetrics,
 			InstanceZoneMetricsSnapshot instanceMetrics) {
 		if (phaseEndsNanos == null || phaseEndsNanos.length != PHASE_COUNT) {
 			throw new IllegalArgumentException("RP turn phase timestamp count must be " + PHASE_COUNT);
@@ -80,7 +83,7 @@ final class RPTurnDiagnostics {
 			}
 		}
 
-		StringBuilder result = new StringBuilder(800);
+		StringBuilder result = new StringBuilder(1000);
 		result.append("Slow RP turn [turn=").append(turnNumber)
 				.append(", elapsedMs=").append(toMillis(elapsedNanos))
 				.append(", budgetMs=").append(budgetMillis)
@@ -138,6 +141,38 @@ final class RPTurnDiagnostics {
 					.append(",slowestSendMs=").append(toMillis(perceptionMetrics.getSlowestSendDurationNanos()))
 					.append(",cacheHits=").append(perceptionMetrics.getCacheHitCount())
 					.append(",cacheMisses=").append(perceptionMetrics.getCacheMissCount())
+					.append('}');
+		}
+
+		if (transferMetrics != null) {
+			result.append(", transfers={offerBatches=")
+					.append(transferMetrics.getOfferBatchCount())
+					.append(",offerFailures=").append(transferMetrics.getOfferSendFailureCount())
+					.append(",offered=").append(transferMetrics.getOfferedContentCount())
+					.append(",cacheable=").append(transferMetrics.getCacheableContentCount())
+					.append(",rawPayloadBytes=").append(transferMetrics.getOfferedRawPayloadBytes())
+					.append(",sendMs=").append(toMillis(transferMetrics.getTotalSendDurationNanos()))
+					.append(",slowestClient=").append(transferMetrics.getSlowestClientId())
+					.append(",slowestSendMs=").append(toMillis(transferMetrics.getSlowestSendDurationNanos()))
+					.append(",slowestBatchItems=").append(transferMetrics.getSlowestBatchContentCount())
+					.append(",slowestBatchRawBytes=").append(transferMetrics.getSlowestBatchRawPayloadBytes())
+					.append('}');
+		}
+
+		if (contentTransferMetrics != null) {
+			result.append(", contentTransfers={ackBatchesTotal=")
+					.append(contentTransferMetrics.getAckBatchCount())
+					.append(",requestedFullTotal=").append(contentTransferMetrics.getRequestedFullContentCount())
+					.append(",cacheReuseTotal=").append(contentTransferMetrics.getCacheReuseContentCount())
+					.append(",sentTotal=").append(contentTransferMetrics.getSentContentCount())
+					.append(",missingTotal=").append(contentTransferMetrics.getMissingContentCount())
+					.append(",rawPayloadBytesTotal=").append(contentTransferMetrics.getSentRawPayloadBytes())
+					.append(",sendBatchesTotal=").append(contentTransferMetrics.getFullSendBatchCount())
+					.append(",sendFailuresTotal=").append(contentTransferMetrics.getFullSendFailureCount())
+					.append(",maxSendMs=").append(toMillis(contentTransferMetrics.getMaxFullSendDurationNanos()))
+					.append(",slowestClient=").append(contentTransferMetrics.getSlowestClientId())
+					.append(",slowestBatchItems=").append(contentTransferMetrics.getSlowestBatchContentCount())
+					.append(",slowestBatchRawBytes=").append(contentTransferMetrics.getSlowestBatchRawPayloadBytes())
 					.append('}');
 		}
 
