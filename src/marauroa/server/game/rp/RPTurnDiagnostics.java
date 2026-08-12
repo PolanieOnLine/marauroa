@@ -58,6 +58,7 @@ final class RPTurnDiagnostics {
 			PerceptionTurnMetricsSnapshot perceptionMetrics,
 			TransferTurnMetricsSnapshot transferMetrics,
 			ContentTransferMetricsSnapshot contentTransferMetrics,
+			ZoneTurnMetricsSnapshot zoneTurnMetrics,
 			InstanceZoneMetricsSnapshot instanceMetrics) {
 		if (phaseEndsNanos == null || phaseEndsNanos.length != PHASE_COUNT) {
 			throw new IllegalArgumentException("RP turn phase timestamp count must be " + PHASE_COUNT);
@@ -176,6 +177,18 @@ final class RPTurnDiagnostics {
 					.append('}');
 		}
 
+		if (zoneTurnMetrics != null) {
+			result.append(", zoneTurns={count=")
+					.append(zoneTurnMetrics.getZoneCount())
+					.append(",failures=").append(zoneTurnMetrics.getFailureCount())
+					.append(",totalMs=").append(toMillis(zoneTurnMetrics.getTotalDurationNanos()))
+					.append(",top=[");
+			appendZoneCost(result, zoneTurnMetrics.getFirstZoneId(), zoneTurnMetrics.getFirstDurationNanos());
+			appendZoneCost(result, zoneTurnMetrics.getSecondZoneId(), zoneTurnMetrics.getSecondDurationNanos());
+			appendZoneCost(result, zoneTurnMetrics.getThirdZoneId(), zoneTurnMetrics.getThirdDurationNanos());
+			result.append("]}");
+		}
+
 		if (instanceMetrics != null) {
 			result.append(", instances={active=")
 					.append(instanceMetrics.getActiveInstanceCount())
@@ -191,6 +204,16 @@ final class RPTurnDiagnostics {
 
 		result.append(']');
 		return result.toString();
+	}
+
+	private static void appendZoneCost(StringBuilder result, String zoneId, long durationNanos) {
+		if (zoneId == null) {
+			return;
+		}
+		if (result.charAt(result.length() - 1) != '[') {
+			result.append(',');
+		}
+		result.append(zoneId).append(':').append(toMillis(durationNanos));
 	}
 
 	private static long toMillis(long nanos) {

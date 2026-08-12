@@ -664,6 +664,7 @@ public class RPServerManager extends Thread {
 									MessageS2CPerception.getPrecomputedPerceptionCacheMissCount()),
 							transferTurnMetrics.snapshot(),
 							ContentTransferMetrics.getInstance().getMetricsSnapshot(),
+							world.getZoneTurnMetricsSnapshot(),
 							world.getInstanceZoneManager().getMetricsSnapshot()));
 				} else if (delay > turnDuration) {
 					logger.error("Delay bigger than Turn duration. [delay: " + delay

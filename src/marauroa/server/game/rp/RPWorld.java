@@ -60,6 +60,9 @@ public class RPWorld implements Iterable<IRPZone> {
 	/** Tasks executed on deterministic RP safe boundaries. */
 	private final WorldTaskScheduler worldTaskScheduler;
 
+	/** Per-turn ranking of zone nextTurn cost. */
+	private final ZoneTurnMetrics zoneTurnMetrics;
+
 	/**
 	 * creates a new RPWorld. Note this class is designed as a singleton.
 	 */
@@ -67,6 +70,7 @@ public class RPWorld implements Iterable<IRPZone> {
 		zones = new ConcurrentHashMap<IRPZone.ID, IRPZone>();
 		instanceZoneManager = new InstanceZoneManager(this);
 		worldTaskScheduler = new WorldTaskScheduler();
+		zoneTurnMetrics = new ZoneTurnMetrics();
 	}
 
 	/**
@@ -114,6 +118,11 @@ public class RPWorld implements Iterable<IRPZone> {
 	/** Returns the scheduler executed at the world turn safe boundary. */
 	public WorldTaskScheduler getWorldTaskScheduler() {
 		return worldTaskScheduler;
+	}
+
+	/** Returns metrics for the most recently executed zone pass. */
+	ZoneTurnMetricsSnapshot getZoneTurnMetricsSnapshot() {
+		return zoneTurnMetrics.snapshot();
 	}
 
 	/** This method is called when RPWorld is created by RPServerManager */
@@ -408,8 +417,17 @@ public class RPWorld implements Iterable<IRPZone> {
 	 * nextTurn method. *
 	 */
 	public void nextTurn() {
-		for (IRPZone zone : zones.values()) {
-			zone.nextTurn();
+		zoneTurnMetrics.reset();
+		for (Map.Entry<IRPZone.ID, IRPZone> entry : zones.entrySet()) {
+			long startNanos = System.nanoTime();
+			boolean succeeded = false;
+			try {
+				entry.getValue().nextTurn();
+				succeeded = true;
+			} finally {
+				zoneTurnMetrics.record(entry.getKey().getID(), succeeded,
+						System.nanoTime() - startNanos);
+			}
 		}
 	}
 
