@@ -1,0 +1,60 @@
+/***************************************************************************
+ *                   (C) Copyright 2003-2026 - Marauroa                    *
+ ***************************************************************************/
+package marauroa.server.game.rp;
+
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
+
+public class RPTurnDiagnosticsTest {
+	private static final long MS = 1000000L;
+
+	@Test
+	public void formatsNamedIncrementalPhasesAndWorldTaskContext() {
+		long start = 100L * MS;
+		long[] ends = new long[RPTurnDiagnostics.PHASE_COUNT];
+		long cursor = start;
+		for (int i = 0; i < ends.length; i++) {
+			long duration = i == RPTurnDiagnostics.PERCEPTIONS ? 25L * MS : (i + 1L) * MS;
+			cursor += duration;
+			ends[i] = cursor;
+		}
+
+		WorldTaskMetricsSnapshot tasks = new WorldTaskMetricsSnapshot(
+				17, 3, 10, 8, 1, 40L * MS, 12L * MS, 2, 15L * MS, 18L * MS);
+		String formatted = RPTurnDiagnostics.formatSlowTurn(
+				42, 150L * MS, 100, start, ends, tasks);
+
+		assertTrue(formatted.contains("turn=42"));
+		assertTrue(formatted.contains("elapsedMs=150"));
+		assertTrue(formatted.contains("budgetMs=100"));
+		assertTrue(formatted.contains("overrunMs=50"));
+		assertTrue(formatted.contains("slowestPhase=perceptions"));
+		assertTrue(formatted.contains("slowestPhaseMs=25"));
+		assertTrue(formatted.contains("writeLock=1"));
+		assertTrue(formatted.contains("actionQueue=2"));
+		assertTrue(formatted.contains("perceptions=25"));
+		assertTrue(formatted.contains("resourceReload=9"));
+		assertTrue(formatted.contains("worldTasks=10"));
+		assertTrue(formatted.contains("transactionCleanup=14"));
+		assertTrue(formatted.contains("worldTasks={pending=3,lastBatchTasks=2,lastBatchMs=15,maxTaskMs=12,executedTotal=8,failedTotal=1}"));
+	}
+
+	@Test
+	public void toleratesMissingWorldTaskContext() {
+		long[] ends = new long[RPTurnDiagnostics.PHASE_COUNT];
+		for (int i = 0; i < ends.length; i++) {
+			ends[i] = i + 1L;
+		}
+
+		String formatted = RPTurnDiagnostics.formatSlowTurn(1, 2L * MS, 1, 0L, ends, null);
+		assertTrue(formatted.startsWith("Slow RP turn [turn=1"));
+		assertTrue(!formatted.contains("worldTasks={"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void rejectsUnexpectedPhaseCount() {
+		RPTurnDiagnostics.formatSlowTurn(1, MS, 1, 0L, new long[1], null);
+	}
+}
