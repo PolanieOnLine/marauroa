@@ -17,6 +17,7 @@ import static marauroa.common.net.message.Message.MessageType.C2S_CREATEACCOUNT;
 import static marauroa.common.net.message.Message.MessageType.C2S_CREATE_ACCOUNT_WITH_TOKEN;
 import static marauroa.common.net.message.Message.MessageType.C2S_CREATECHARACTER;
 import static marauroa.common.net.message.Message.MessageType.C2S_KEEPALIVE;
+import static marauroa.common.net.message.Message.MessageType.C2S_LEAVECHARACTER;
 import static marauroa.common.net.message.Message.MessageType.C2S_LOGIN_REQUESTKEY;
 import static marauroa.common.net.message.Message.MessageType.C2S_LOGIN_SENDNONCENAMEANDPASSWORD;
 import static marauroa.common.net.message.Message.MessageType.C2S_LOGIN_SENDNONCENAMEPASSWORDANDSEED;
@@ -67,6 +68,7 @@ public class MessageDispatcher {
 		handlers.put(C2S_LOGIN_WITH_TOKEN, new SecuredLoginHandler());
 		handlers.put(C2S_CHOOSECHARACTER, new ChooseCharacterHandler());
 		handlers.put(C2S_LOGOUT, new LogoutHandler());
+		handlers.put(C2S_LEAVECHARACTER, new LeaveCharacterHandler());
 		handlers.put(C2S_ACTION, new ActionHandler());
 		handlers.put(C2S_OUTOFSYNC, new OutOfSyncHandler());
 		handlers.put(C2S_KEEPALIVE, new KeepAliveHandler());

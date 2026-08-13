@@ -48,6 +48,9 @@ public class PlayerEntry {
 	 */
 	public long creationTime;
 
+	/** Start of the current pre-game phase used by the idle-login cleanup. */
+	private long preGameStateStartTime;
+
 	/** The state in which this player is */
 	public ClientState state;
 
@@ -144,6 +147,7 @@ public class PlayerEntry {
 		contentToTransfer = Collections.synchronizedList(new LinkedList<TransferContent>());
 
 		creationTime = System.currentTimeMillis();
+		preGameStateStartTime = creationTime;
 		activityTimestamp=creationTime;
 	}
 
@@ -295,10 +299,26 @@ public class PlayerEntry {
 	}
 
 	/**
-	 * This method tag this entry as removable if there is more than
-	 * UNCOMPLETED_LOGIN_TIMEOUT milliseconds since the creation time of the
-	 * entry and the actual time and the entry has not completed the login
-	 * stage.
+	 * Clears all state owned by the active character and returns this connection
+	 * to the authenticated character-selection phase.
+	 */
+	public void returnToCharacterSelection() {
+		state = ClientState.LOGIN_COMPLETE;
+		character = null;
+		object = null;
+		perceptionCounter = 0;
+		requestedSync = true;
+		contentToTransfer.clear();
+		characterCounter = 0;
+		gotKeepAliveInGameState = false;
+		preGameStateStartTime = System.currentTimeMillis();
+		activityTimestamp = preGameStateStartTime;
+	}
+
+	/**
+	 * This method tags this entry as removable if more than
+	 * UNCOMPLETED_LOGIN_TIMEOUT milliseconds have elapsed in the current
+	 * pre-game phase without entering the game.
 	 *
 	 * @return true, if it is removable, false otherwise
 	 */
@@ -309,7 +329,7 @@ public class PlayerEntry {
 		 */
 		boolean isInOKState = (state == ClientState.GAME_BEGIN);
 		return !isInOKState
-		        && System.currentTimeMillis() - creationTime > TimeoutConf.UNCOMPLETED_LOGIN_TIMEOUT;
+		        && System.currentTimeMillis() - preGameStateStartTime > TimeoutConf.UNCOMPLETED_LOGIN_TIMEOUT;
 	}
 
 	/**

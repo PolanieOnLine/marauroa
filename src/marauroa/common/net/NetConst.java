@@ -56,8 +56,9 @@ public class NetConst {
 	 * 33 - Added support for maps as attributes
 	 * 34 - Added hash on content transfer, empty perceptions are now omittable
 	 * 35 - Aded data type long
+	 * 36 - Added returning from an active character to character selection
 	 */
-	public static final byte NETWORK_PROTOCOL_VERSION = 35;
+	public static final byte NETWORK_PROTOCOL_VERSION = 36;
 
 	/** Oldest supported protocol version */
 	public static final byte NETWORK_PROTOCOL_VERSION_MIN = 31;
@@ -90,4 +91,7 @@ public class NetConst {
 
 	/** data type long */
 	public static final int FIRST_VERSION_WITH_TYPE_LONG = 35;
+
+	/** leaving an active character while retaining the authenticated account session */
+	public static final int FIRST_VERSION_WITH_CHARACTER_SESSION_LEAVE = 36;
 }
