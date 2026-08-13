@@ -41,6 +41,7 @@ import marauroa.common.game.RPObject;
 import marauroa.common.game.Result;
 import marauroa.common.i18n.I18N;
 import marauroa.common.net.InvalidVersionException;
+import marauroa.common.net.NetConst;
 import marauroa.common.net.message.Message;
 import marauroa.common.net.message.MessageC2SAction;
 import marauroa.common.net.message.MessageC2SChooseCharacter;
@@ -48,6 +49,7 @@ import marauroa.common.net.message.MessageC2SCreateAccount;
 import marauroa.common.net.message.MessageC2SCreateAccountWithToken;
 import marauroa.common.net.message.MessageC2SCreateCharacter;
 import marauroa.common.net.message.MessageC2SKeepAlive;
+import marauroa.common.net.message.MessageC2SLeaveCharacter;
 import marauroa.common.net.message.MessageC2SLoginRequestKey;
 import marauroa.common.net.message.MessageC2SLoginSendNonceNameAndPassword;
 import marauroa.common.net.message.MessageC2SLoginSendNonceNamePasswordAndSeed;
@@ -68,6 +70,8 @@ import marauroa.common.net.message.MessageS2CLoginMessageNACK;
 import marauroa.common.net.message.MessageS2CLoginNACK;
 import marauroa.common.net.message.MessageS2CLoginSendKey;
 import marauroa.common.net.message.MessageS2CLoginSendNonce;
+import marauroa.common.net.message.MessageS2CLeaveCharacterACK;
+import marauroa.common.net.message.MessageS2CLeaveCharacterNACK;
 import marauroa.common.net.message.MessageS2CPerception;
 import marauroa.common.net.message.MessageS2CServerInfo;
 import marauroa.common.net.message.MessageS2CTransfer;
@@ -94,6 +98,9 @@ public abstract class ClientFramework {
 
 	/** a timer for keep a live messages */
 	private Timer keepAliveTimer = null;
+
+	/** protocol version actually spoken by the connected server */
+	private int serverProtocolVersion = NetConst.NETWORK_PROTOCOL_VERSION;
 
 	/**
 	 * We keep an instance of network manager to be able to communicate with
@@ -220,6 +227,7 @@ public abstract class ClientFramework {
 	 * @throws IOException if connection is not possible
 	 */
 	public void connect(Proxy proxy, InetSocketAddress serverAddress) throws IOException {
+		serverProtocolVersion = NetConst.NETWORK_PROTOCOL_VERSION;
 		netMan = new TCPNetworkClientManager(proxy, serverAddress);
 	}
 
@@ -251,6 +259,7 @@ public abstract class ClientFramework {
 			msg = messages.remove(0);
 		}
 
+		serverProtocolVersion = Math.min(serverProtocolVersion, msg.getProtocolVersion());
 		logger.debug("CF getMessage: " + msg);
 		return msg;
 	}
@@ -600,6 +609,9 @@ public abstract class ClientFramework {
 				/* Server accepted the character we chose */
 				case S2C_CHOOSECHARACTER_ACK:
 					logger.debug("Choose Character ACK");
+					if (keepAliveTimer != null) {
+						keepAliveTimer.cancel();
+					}
 					keepAliveTimer = new Timer("KeepAlive", true);
 					keepAliveTimer.schedule(new KeepAliveSender(netMan), 1000, 10000);
 					return true;
@@ -614,6 +626,68 @@ public abstract class ClientFramework {
 
 		// Unreachable, but makes javac happy
 		return false;
+	}
+
+	/**
+	 * Returns whether the connected server supports leaving the active character
+	 * without ending the authenticated account session.
+	 *
+	 * @return true if character-session leave is supported
+	 */
+	public boolean supportsCharacterSessionLeave() {
+		return serverProtocolVersion >= NetConst.FIRST_VERSION_WITH_CHARACTER_SESSION_LEAVE;
+	}
+
+	/**
+	 * Leave the active character while retaining the authenticated account
+	 * session. A successful request returns the server to character selection.
+	 *
+	 * Messages belonging to the old in-game state are discarded after ACK. If
+	 * the request is rejected or fails, deferred messages are restored so the
+	 * current game session can continue.
+	 *
+	 * @return true if the active character was left, false if unsupported or rejected
+	 * @throws InvalidVersionException if an invalid protocol message is received
+	 * @throws TimeoutException if the server does not respond
+	 * @throws BannedAddressException if the connection is rejected
+	 */
+	public synchronized boolean leaveCharacter() throws InvalidVersionException, TimeoutException,
+	        BannedAddressException {
+		if (!supportsCharacterSessionLeave()) {
+			return false;
+		}
+
+		MessageC2SLeaveCharacter request = new MessageC2SLeaveCharacter(null);
+		request.setProtocolVersion(serverProtocolVersion);
+		netMan.addMessage(request);
+
+		List<Message> deferred = new LinkedList<Message>();
+		boolean restoreDeferred = true;
+		try {
+			while (true) {
+				Message msg = getMessage(TIMEOUT_EXTENDED);
+				switch (msg.getType()) {
+					case S2C_LEAVECHARACTER_ACK:
+						logger.debug("Leave Character ACK");
+						for (Message pending : deferred) {
+							if (pending instanceof MessageS2CCharacterList) {
+								messages.add(pending);
+							}
+						}
+						restoreDeferred = false;
+						return true;
+					case S2C_LEAVECHARACTER_NACK:
+						logger.debug("Leave Character NACK");
+						return false;
+					default:
+						deferred.add(msg);
+				}
+			}
+		} finally {
+			if (restoreDeferred && !deferred.isEmpty()) {
+				messages.addAll(0, deferred);
+			}
+		}
 	}
 
 	/**
@@ -858,6 +932,14 @@ public abstract class ClientFramework {
 			receivedMessages = true;
 
 			switch (msg.getType()) {
+				case S2C_CHARACTERLIST: {
+					logger.debug("Processing Character List");
+					MessageS2CCharacterList list = (MessageS2CCharacterList) msg;
+					onAvailableCharacters(list.getCharacters());
+					onAvailableCharacterDetails(list.getCharacterDetails());
+					break;
+				}
+
 				/* It can be a perception message */
 				case S2C_PERCEPTION: {
 					logger.debug("Processing Message Perception");

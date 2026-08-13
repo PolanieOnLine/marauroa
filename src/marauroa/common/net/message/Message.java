@@ -110,6 +110,12 @@ public class Message implements Serializable {
 		C2S_LOGIN_WITH_TOKEN,
 		/** client to server: requests an account creation without password required (e.g. 3rd party auth provider) */
 		C2S_CREATE_ACCOUNT_WITH_TOKEN,
+		/** client to server: leaves the active character while keeping the authenticated account session */
+		C2S_LEAVECHARACTER,
+		/** server to client: confirms leaving the active character */
+		S2C_LEAVECHARACTER_ACK,
+		/** server to client: rejects leaving the active character */
+		S2C_LEAVECHARACTER_NACK,
 	}
 
 	/** Type of the message */
