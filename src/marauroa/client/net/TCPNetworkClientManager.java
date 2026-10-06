@@ -58,10 +58,13 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 	private final InetSocketAddress address;
 
 	/** While keepRunning is true, we keep receiving messages */
-	boolean keepRunning;
+	volatile boolean keepRunning;
+
+	/** True only when the owner deliberately closes this connection. */
+	private volatile boolean closing;
 
 	/** isFinished is true when the thread has really exited. */
-	boolean isfinished;
+	volatile boolean isfinished;
 
 	/** A instance of the thread that read stuff from network and build messages. */
 	private final NetworkClientManagerRead readManager;
@@ -90,7 +93,7 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 	/**
 	 * This is true as long as we are connected to server.
 	 */
-	boolean connected = false;
+	volatile boolean connected = false;
 
 	/**
 	 * already registered?
@@ -164,6 +167,7 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 	 */
 	public void finish() {
 		logger.debug("shutting down NetworkClientManager");
+		closing = true;
 		keepRunning = false;
 		connected = false;
 
@@ -175,8 +179,19 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 
 		readManager.interrupt();
 
-		while (!isfinished) {
-			Thread.yield();
+		boolean interrupted = false;
+		if (Thread.currentThread() != readManager) {
+			while (readManager.isAlive()) {
+				try {
+					readManager.join();
+				} catch (InterruptedException e) {
+					// Complete cleanup, but preserve the caller's interruption.
+					interrupted = true;
+				}
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
 		}
 
 		logger.debug("NetworkClientManager is down");
@@ -341,21 +356,24 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 			int size = -1;
 			int start = -1;
 			try {
-				while (is.available() < 4) {
-					try {
-						Thread.sleep(10);
-					} catch (InterruptedException e) {
-						logger.error(e, e);
+				int headerRead = 0;
+				while (keepRunning && headerRead < sizebuffer.length) {
+					int read = is.read(sizebuffer, headerRead, sizebuffer.length - headerRead);
+					if (read < 0) {
+						throw new IOException("Connection closed while reading packet header");
 					}
+					headerRead += read;
 				}
 
-				if (is.read(sizebuffer) < 0) {
-					isfinished = true;
+				if (!keepRunning) {
 					return null;
 				}
 
 				size = (sizebuffer[0] & 0xFF) + ((sizebuffer[1] & 0xFF) << 8)
 				        + ((sizebuffer[2] & 0xFF) << 16) + ((sizebuffer[3] & 0xFF) << 24);
+				if (size < sizebuffer.length) {
+					throw new IOException("Invalid packet size: " + size);
+				}
 
 				buffer = new byte[size];
 				System.arraycopy(sizebuffer, 0, buffer, 0, 4);
@@ -363,33 +381,25 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 				// read until everything is received. We have to call read
 				// in a loop because the data may be split across several
 				// packets.
-				long startTime = System.currentTimeMillis();
 				start = 4;
-				int read = 0;
-				long waittime = 10;
-				do {
-					start = start + read;
-					read = is.read(buffer, start, size - start);
+				while (keepRunning && start < size) {
+					int read = is.read(buffer, start, size - start);
 					if (read < 0) {
-						isfinished = true;
-						return null;
+						throw new IOException("Connection closed while reading packet body");
 					}
-
-					if (System.currentTimeMillis() - 2000 > startTime) {
-						logger.warn("Waiting for more data");
-						waittime = 1000;
-					}
-					try {
-						Thread.sleep(waittime);
-					} catch (InterruptedException e) {
-						logger.error(e, e);
-					}
-				} while (start + read < size);
+					start += read;
+				}
+				if (!keepRunning) {
+					return null;
+				}
 
 				logger.debug("Received Marauroa Packet");
 
 				return buffer;
 			} catch (IOException e) {
+				if (closing) {
+					return null;
+				}
 				logger.warn("size buffer: " + Utility.dumpByteArray(sizebuffer));
 				logger.warn("size: " + size + " start: " + start);
 				logger.warn("buffer: " +  Utility.dumpByteArray(buffer));
@@ -402,8 +412,8 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 		public void run() {
 			logger.debug("run()");
 
-			while (keepRunning) {
-				try {
+			try {
+				while (keepRunning) {
 					byte[] buffer = readByteStream();
 					if (buffer == null) {
 						/* User has requested exit */
@@ -411,17 +421,17 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 					}
 
 					storeMessage(buffer);
-				} catch (IOException e) {
-					// TODO: Notify upper layers about connection broken
-					/* Report the exception */
-					logger.warn("Connection broken.", e);
-					connected=false;
-					keepRunning = false;
 				}
+			} catch (IOException e) {
+				if (!closing) {
+					logger.warn("Connection broken.", e);
+				}
+			} finally {
+				connected = false;
+				keepRunning = false;
+				isfinished = true;
+				logger.debug("run() finished");
 			}
-
-			isfinished = true;
-			logger.warn("run() finished");
 		}
 	}
 
@@ -448,7 +458,7 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 					Runtime.getRuntime().addShutdownHook(new Thread() {
 						@Override
 						public void run() {
-							if (!loggedOut) {
+							if (keepRunning && !loggedOut) {
 								Message msg = new MessageC2SLogout(1);
 								write(msg);
 							}
@@ -497,13 +507,17 @@ public final class TCPNetworkClientManager implements INetworkClientManagerInter
 					os.write(encoder.encode(msg));
 					return true;
 				} else {
-					logger.warn("Write requested not to keeprunning");
+					if (!closing) {
+						logger.warn("Write requested not to keeprunning");
+					}
 					connected = false;
 					return false;
 				}
 			} catch (IOException e) {
 				/* Report the exception */
-				logger.error("error while sending a packet (msg=(" + msg + "))", e);
+				if (!closing) {
+					logger.error("error while sending a packet (msg=(" + msg + "))", e);
+				}
 				connected = false;
 				return false;
 			}
